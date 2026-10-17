@@ -3,8 +3,9 @@
 ## Unreleased
 
 - Replace implicit generation and raw prompting with explicit generate, forced Caption and Layout routes.
-- Return generate mode to a single Anima-inspired English tag plan; freeze quality prefixes, identities and styles, then assemble them without official Caption expansion or compilation.
-- Explain every main-menu command and canvas flag, including official expansion in Layout mode.
+- Make generate mode preserve the original user description without LLM expansion, translation, tag cleaning, official compilation or implicit white backgrounds; assemble fixed quality prefixes, styles and verified identity references only.
+- Keep optional identity lookup separate, merge aliases and avoid duplicating canonical tags already present; research failures retain the original description without blocking generation.
+- Compact the annotated main menu into seven lines, retaining official expansion descriptions and canvas examples.
 - Add single-image reverse prompting through the host's native VLM, isolated from generation prefixes and styles, with bounded latest-task diagnostics and long-result group forwards.
 - Add a style submenu with selection, creation and editing, private persistence and independently scoped user/conversation selections.
 - Normalize mixed-case candidate tags and retain original character names even when candidate validation or lookup fails.

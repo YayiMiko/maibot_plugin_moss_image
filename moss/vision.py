@@ -9,7 +9,7 @@ from PIL import Image, ImageOps
 
 from .comfy import validate_image
 from .media import MAX_BYTES
-from .tag_planner import clean_tag_output
+from .tag_output import clean_tag_output
 
 
 class VisionError(RuntimeError):

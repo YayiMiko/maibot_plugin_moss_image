@@ -11,8 +11,11 @@ editing, comic or meme commands. OC, comic and meme interfaces remain reserved.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru
-tag lists. Generate mode uses an Anima-style tag planner, not the official
-Caption expander, and assembles frozen prefixes and styles afterward.
+tag lists. Generate mode preserves the user's description without LLM expansion,
+translation, tag cleaning or automatic backgrounds. Only optional character
+identification may use the LLM; failures must not block direct generation.
+Assemble frozen prefixes, styles and deduplicated verified identity references
+without adding default appearances or subjects.
 Reverse uses the host VLM and returns observed image tags without style injection.
 Caption and Layout modes remain unwrapped. Never clean
 Caption prose as a comma-separated tag list or invent an extra artist library.

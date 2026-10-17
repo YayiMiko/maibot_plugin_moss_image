@@ -1,4 +1,4 @@
-"""Custom tags or official drafts with a shared evidence-only character stage."""
+"""Direct user descriptions or official drafts with optional identity evidence."""
 
 import asyncio
 import json
@@ -7,7 +7,6 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from .commands import ImageRequest
-from .tag_planner import TAG_PLANNER_SYSTEM, clean_tag_output
 
 
 class PlanningError(RuntimeError):
@@ -28,7 +27,6 @@ class PromptPlan:
     prefixes: dict = field(default_factory=dict)
     content_prompt: str = ""
     body_format: str = ""
-    background_mode: str = ""
 
 
 class Planner:
@@ -87,7 +85,7 @@ class Planner:
             record_response: Async private latest-task diagnostic callback.
 
         Returns:
-            A tag plan or an editable official draft with its compiled output.
+            A direct user description or an official draft and compiled output.
 
         Raises:
             PlanningError: Reserved intent, provider failure or invalid draft.
@@ -98,6 +96,11 @@ class Planner:
             raise PlanningError("reserved_oc_context")
         if request.mode not in {"generate", "caption", "layout"}:
             raise PlanningError("unsupported_mode")
+        if not request.prompt.strip() or "\x00" in request.prompt:
+            raise PlanningError("invalid_input")
+        if request.mode == "generate":
+            # Optional research has its own bounded waits and may degrade safely.
+            return await self._plan(request, config, record_response)
         return await asyncio.wait_for(
             self._plan(request, config, record_response), timeout=config.timeout
         )
@@ -106,15 +109,28 @@ class Planner:
         """Keep identity extraction, evidence and one structural repair in order."""
         characters = []
         if config.danbooru_enabled:
-            extraction = await self._call(
-                'Identify only explicitly named existing fictional characters. Return JSON only: {"characters":[{"source_name":"exact substring of user input","copyright":"work name","candidates":["canonical_tag_(work)"]}]}. Return an empty array for unnamed/original characters, ordinary objects and text merely requested for display. Never add a character. Maximum 8 identities and 3 candidate tags per identity. Candidates are unverified search hints, not facts.',
-                request.prompt,
-                config,
-                record_response,
-                "identity",
-            )
+            instruction = 'Identify only explicitly named existing fictional characters. Return JSON only: {"characters":[{"source_name":"exact substring of user input","copyright":"work name","candidates":["canonical_tag_(work)"]}]}. Return an empty array for unnamed/original characters, ordinary objects and text merely requested for display. Never add a character. Maximum 8 identities and 3 candidate tags per identity. Candidates are unverified search hints, not facts.'
+            if request.mode == "generate":
+                instruction += ' This is identity lookup ONLY, not prompt rewriting, image generation or Caption expansion. Include "depicted":true only for characters explicitly intended to appear. Omit excluded characters, negated subjects, quoted dialogue, signs and names merely requested as visible lettering. Preserve separate people and distinguish aliases of the same person. Do not describe outfits, actions, backgrounds, ages or appearances. If uncertain, omit the identity and return an empty array; never infer extra characters from franchise names.'
+            try:
+                extraction = await self._call(
+                    instruction, request.prompt, config, record_response, "identity"
+                )
+            except Exception as exc:
+                if request.mode != "generate":
+                    raise
+                extraction = '{"characters":[]}'
+                if record_response:
+                    await record_response(
+                        "identity_unavailable", {"exception_type": type(exc).__name__}
+                    )
             try:
                 extracted = self.skill.parse(extraction)
+                visible_input = re.sub(
+                    r'"(?:\\.|[^"\\])*"|“[^”]*”|「[^」]*」|『[^』]*』',
+                    lambda match: " " * len(match[0]),
+                    request.prompt,
+                )
                 for item in extracted["characters"]:
                     if not isinstance(item, dict):
                         continue
@@ -124,6 +140,10 @@ class Planner:
                         or not name.strip()
                         or name not in request.prompt
                         or name in {"少女", "女孩", "少年", "男孩", "girl", "boy"}
+                    ):
+                        continue
+                    if request.mode == "generate" and (
+                        item.get("depicted") is not True or name not in visible_input
                     ):
                         continue
                     candidates = item.get("candidates", [])
@@ -156,7 +176,26 @@ class Planner:
             except (ValueError, KeyError, TypeError):
                 # Identity research is optional; malformed hints never replace the request.
                 characters = []
-        evidence = await self.resolver.resolve(characters, config.danbooru_budget)
+        try:
+            if request.mode == "generate":
+                evidence = (
+                    await asyncio.wait_for(
+                        self.resolver.resolve(characters, config.danbooru_budget),
+                        timeout=config.danbooru_budget,
+                    )
+                    if characters
+                    else []
+                )
+            else:
+                evidence = await self.resolver.resolve(
+                    characters, config.danbooru_budget
+                )
+        except Exception:
+            if request.mode != "generate":
+                raise
+            evidence = []
+        if not isinstance(evidence, list):
+            evidence = []
         evidence = [
             {
                 "status": "unresolved",
@@ -164,7 +203,8 @@ class Planner:
                     (
                         item
                         for item in evidence
-                        if item.get("source_name") == character["source_name"]
+                        if isinstance(item, dict)
+                        and item.get("source_name") == character["source_name"]
                     ),
                     {},
                 ),
@@ -174,7 +214,7 @@ class Planner:
             for character in characters
         ]
         if request.mode == "generate":
-            return await self._generate_tags(request, config, evidence, record_response)
+            return self._assemble_direct(request, evidence)
         system = (
             self.skill.instructions
             + (
@@ -244,75 +284,91 @@ class Planner:
                 )
         raise PlanningError("invalid_draft")
 
-    async def _generate_tags(
-        self, request, config, evidence, record_response
-    ) -> PromptPlan:
-        """Build the custom tag body once, without invoking the official compiler."""
-        identities = list(
-            dict.fromkeys(
-                item["canonical_tag"]
-                if item.get("status") == "verified" and item.get("canonical_tag")
-                else item["source_name"]
-                for item in evidence
-            )
-        )
+    def _assemble_direct(self, request, evidence) -> PromptPlan:
+        """Keep the body intact and add only fixed context and identity bindings.
+
+        Args:
+            request: Original description and frozen prefix/style snapshots.
+            evidence: Verified character lookup results, not new image subjects.
+
+        Returns:
+            A direct natural-language prompt with a separately saved original body.
+        """
+        identities = {}
+        known = unicodedata.normalize(
+            "NFKC",
+            request.prompt
+            + "\n"
+            + request.style_prompt
+            + "\n"
+            + request.positive_prefix,
+        ).casefold()
+        for item in evidence:
+            tag = item.get("canonical_tag", "")
+            if (
+                item.get("status") != "verified"
+                or not isinstance(tag, str)
+                or not re.fullmatch(r"[a-z0-9_.'():-]{3,100}", tag)
+            ):
+                continue
+            if re.search(r"(?<![a-z0-9_])" + re.escape(tag) + r"(?![a-z0-9_])", known):
+                continue
+            names = identities.setdefault(tag, [])
+            if item["source_name"] not in names:
+                names.append(item["source_name"])
+        references = [
+            " / ".join(json.dumps(name, ensure_ascii=False) for name in names)
+            + " = "
+            + tag
+            for tag, names in identities.items()
+        ]
+        style = request.style_prompt.strip().rstrip(",，").rstrip()
+        prefix_terms = []
+        existing = unicodedata.normalize(
+            "NFKC", request.prompt + "\n" + style
+        ).casefold()
+        for term in re.split(r"[,，]", request.positive_prefix):
+            term = term.strip()
+            if (
+                term
+                and term.casefold() not in {p.casefold() for p in prefix_terms}
+                and not re.search(
+                    r"(?:^|[,，\n])\s*"
+                    + re.escape(term.casefold())
+                    + r"\s*(?=$|[,，\n])",
+                    existing,
+                )
+            ):
+                prefix_terms.append(term)
         prefixes = {
             "positive_prefix": request.positive_prefix,
-            "identity_tags": identities,
+            "effective_positive_prefix": ", ".join(prefix_terms),
+            "identity_references": [
+                {"canonical_tag": tag, "source_names": names}
+                for tag, names in identities.items()
+            ],
             "style_name": request.style_name,
             "style_prompt": request.style_prompt,
             "oc_context": request.oc_context,
         }
-        text = await self._call(
-            TAG_PLANNER_SYSTEM,
-            json.dumps(
-                {
-                    "request": request.prompt,
-                    "width": request.width,
-                    "height": request.height,
-                    "character_evidence": evidence,
-                    "locked_prefixes": prefixes,
-                },
-                ensure_ascii=False,
-            ),
-            config,
-            record_response,
-            "tags",
-        )
-        marker = re.search(r"\s*\[\[BACKGROUND:(portrait|scene)\]\]\s*$", text, re.I)
-        background = marker[1].lower() if marker else "portrait"
-        if marker:
-            text = text[: marker.start()]
-        reserved = (
-            "best quality",
-            "highres",
-            "masterpiece",
-            *identities,
-            *re.split(r"[,，]", request.positive_prefix),
-            *re.split(r"[,，]", request.style_prompt),
-        )
-        try:
-            body = clean_tag_output(text, exclude=reserved)
-            if background == "portrait":
-                body = clean_tag_output(body + ", simple background, white background")
-        except ValueError as exc:
-            raise PlanningError("invalid_tags") from exc
-        heading = ", ".join(
-            part.strip().rstrip(",，").rstrip()
-            for part in (
-                request.positive_prefix,
-                ", ".join(identities),
-                request.style_prompt,
+        sections = [
+            section
+            for section in (prefixes["effective_positive_prefix"], style)
+            if section
+        ]
+        if references:
+            sections.append(
+                "Character identity reference only (same named subjects, not extra people or visible lettering; requested counts, outfits and actions take precedence): "
+                + "; ".join(references)
+                + "."
             )
-            if part.strip().rstrip(",，").rstrip()
-        )
+        sections.append(request.prompt)
         return PromptPlan(
-            draft={"tags": body},
-            prompt=(heading + ", " if heading else "") + body,
+            draft=None,
+            prompt="\n".join(sections),
             characters=evidence,
             mode="generate",
             prefixes=prefixes,
-            content_prompt=body,
-            body_format="tags",
-            background_mode=background,
+            content_prompt=request.prompt,
+            body_format="natural_language",
         )

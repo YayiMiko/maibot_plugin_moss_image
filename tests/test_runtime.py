@@ -345,14 +345,13 @@ def test_atomic_storage_replaces_without_leftover_temp(tmp_path):
     assert list(tmp_path.iterdir()) == [path]
 
 
-def test_generate_saves_tag_body_prefixes_and_exact_submitted_prompt(
+def test_generate_saves_original_body_prefixes_and_exact_submitted_prompt(
     plugin, command, comfy_transport
 ):
     command["text"] = "/moss 生成 白猫睡在窗边"
-    plugin.ctx.llm.generate.return_value = {
-        "success": True,
-        "response": "white cat, sleeping, windowsill [[BACKGROUND:scene]]",
-    }
+    plugin.ctx.llm.generate.side_effect = AssertionError(
+        "Direct generation must not call a body planner"
+    )
 
     async def run():
         await plugin.on_load()
@@ -372,12 +371,24 @@ def test_generate_saves_tag_body_prefixes_and_exact_submitted_prompt(
             next(r.content for r in comfy_transport if r.url.path == "/prompt")
         )["prompt"]
         assert prompt == graph["4"]["inputs"]["text"]
-        assert prompt.startswith(frozen_prefix) and "LATER PREFIX" not in prompt
-        assert body == "white cat, sleeping, windowsill"
+        assert (
+            prompt.startswith(frozen_prefix.rstrip(","))
+            and "LATER PREFIX" not in prompt
+        )
+        assert body == "白猫睡在窗边"
         assert prompt.endswith(body) and prefixes["style_name"] == "千代风格"
         assert prefixes["positive_prefix"] == frozen_prefix
         assert record["mode"] == "generate" and record["status"] == "sent"
-        assert record["body_format"] == "tags" and record["planner"] == "chiyo-tags"
+        assert (
+            record["body_format"] == "natural_language"
+            and record["planner"] == "direct-input"
+        )
+        assert not (directory / "draft.json").exists()
+        plugin.ctx.llm.generate.assert_not_awaited()
+        diagnostic = json.loads(
+            (plugin.store.data / "last_llm_response.json").read_text(encoding="utf-8")
+        )
+        assert diagnostic["calls"] == [] and diagnostic["task_id"] == record["task_id"]
         assert "skill_revision" not in record
         await plugin.on_unload()
 

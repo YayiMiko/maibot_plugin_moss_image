@@ -117,7 +117,7 @@ class Styles(PluginConfigBase):
     positive_prefix: str = Field(
         default="best quality, highres,",
         max_length=4096,
-        description="仅用于 /moss 生成；在千代式正文规划后由程序拼接。留空不添加。",
+        description="仅用于 /moss 生成；与所选风格、用户原文直接拼接，不调用 LLM 扩写。留空不添加。",
     )
     presets: list[str] = Field(
         default_factory=lambda: [

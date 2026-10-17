@@ -100,14 +100,12 @@ class TaskRunner:
                     width=request.width,
                     height=request.height,
                     body_format=plan.body_format,
-                    planner="chiyo-tags"
+                    planner="direct-input"
                     if request.mode == "generate"
                     else "official-skill",
                 )
                 if request.mode != "generate":
                     record["skill_revision"] = self.planner.skill.revision
-                if plan.background_mode:
-                    record["background_mode"] = plan.background_mode
                 if plan.draft is not None:
                     await asyncio.to_thread(
                         atomic_write, directory / "draft.json", plan.draft

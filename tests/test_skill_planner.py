@@ -283,13 +283,10 @@ def test_caption_routes_repair_accidental_layout_once(mode):
     assert ctx.llm.generate.await_count == 2
 
 
-def test_generate_expands_original_once_with_frozen_context_and_separate_body(
+def test_generate_preserves_original_with_frozen_context_without_model_calls(
     monkeypatch,
 ):
-    tags = 'adult traveler, raincoat, train station, smile, sign reading "你好！", raindrops'
-    planner, ctx, _ = make_planner(
-        [{"success": True, "response": tags + " [[BACKGROUND:scene]]"}]
-    )
+    planner, ctx, _ = make_planner([])
     monkeypatch.setattr(
         planner.skill,
         "compile",
@@ -307,22 +304,21 @@ def test_generate_expands_original_once_with_frozen_context_and_separate_body(
         style_prompt="@artist name, 简洁平涂，",
     )
     plan = asyncio.run(planner.plan(request, Planning(danbooru_enabled=False)))
-    assert plan.compiled_prompt == "" and plan.content_prompt == tags
-    assert plan.body_format == "tags" and plan.background_mode == "scene"
-    assert plan.prompt == "best quality, highres, @artist name, 简洁平涂, " + tags
+    assert plan.compiled_prompt == "" and plan.content_prompt == request.prompt
+    assert plan.body_format == "natural_language"
+    assert (
+        plan.prompt
+        == "best quality, highres\n@artist name, 简洁平涂\n" + request.prompt
+    )
     assert (
         plan.prompt.count("best quality") == 1
         and plan.prompt.count("@artist name") == 1
     )
-    assert plan.draft == {"tags": tags}
+    assert plan.draft is None
     assert plan.prefixes["oc_context"] is None
-    assert ctx.llm.generate.await_count == 1
-    messages = ctx.llm.generate.call_args.args[0]
-    payload = json.loads(messages[1]["content"])
-    assert payload["request"] == request.prompt
-    assert payload["locked_prefixes"]["style_prompt"] == request.style_prompt
-    assert planner.skill.instructions not in messages[0]["content"]
-    assert "white background" in messages[0]["content"]
+    ctx.llm.generate.assert_not_awaited()
+    assert plan.prefixes["style_prompt"] == request.style_prompt
+    assert "white background" not in plan.prompt
     assert "BACKGROUND" not in plan.prompt
 
 
@@ -358,13 +354,17 @@ def test_pure_skill_routes_ignore_generate_prefix_and_style(mode):
 def test_candidate_normalization_never_discards_original_identity(candidates, expected):
     extraction = {
         "characters": [
-            {"source_name": "荧", "copyright": "原神", "candidates": candidates}
+            {
+                "source_name": "荧",
+                "copyright": "原神",
+                "candidates": candidates,
+                "depicted": True,
+            }
         ]
     }
     planner, ctx, resolver = make_planner(
         [
             {"success": True, "response": json.dumps(extraction)},
-            {"success": True, "response": "raincoat, standing [[BACKGROUND:portrait]]"},
         ]
     )
     plan = asyncio.run(
@@ -373,24 +373,18 @@ def test_candidate_normalization_never_discards_original_identity(candidates, ex
     assert resolver.resolve.call_args.args[0][0]["candidates"] == expected
     assert plan.characters[0]["source_name"] == "荧"
     assert plan.characters[0]["copyright"] == "原神"
-    assert plan.prefixes["identity_tags"] == ["荧"]
-    assert plan.prompt.startswith("荧, ")
-    assert (
-        json.loads(ctx.llm.generate.call_args.args[0][1]["content"])[
-            "character_evidence"
-        ][0]["source_name"]
-        == "荧"
-    )
+    assert plan.prefixes["identity_references"] == []
+    assert plan.prompt == "荧穿雨衣"
+    assert ctx.llm.generate.await_count == 1
 
 
-def test_generate_uses_only_verified_identity_as_a_canonical_prefix():
+def test_generate_uses_verified_identity_as_a_binding_not_an_extra_subject():
     planner, _, resolver = make_planner(
         [
             {
                 "success": True,
-                "response": '{"characters":[{"source_name":"荧","candidates":["Lumine_(Genshin_Impact)"]}]}',
+                "response": '{"characters":[{"source_name":"荧","depicted":true,"candidates":["Lumine_(Genshin_Impact)"]}]}',
             },
-            {"success": True, "response": "raincoat, standing [[BACKGROUND:portrait]]"},
         ]
     )
     resolver.resolve.return_value = [
@@ -403,7 +397,9 @@ def test_generate_uses_only_verified_identity_as_a_canonical_prefix():
     plan = asyncio.run(
         planner.plan(ImageRequest("荧穿雨衣", 1024, 1024, "generate"), Planning())
     )
-    assert plan.prompt.startswith("lumine_(genshin_impact), ")
+    assert '"荧" = lumine_(genshin_impact)' in plan.prompt
+    assert "not extra people" in plan.prompt
+    assert plan.prompt.endswith("\n荧穿雨衣")
 
 
 def test_empty_candidates_do_not_call_danbooru_but_retain_source(monkeypatch):

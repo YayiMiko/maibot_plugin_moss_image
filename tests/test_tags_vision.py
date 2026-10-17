@@ -1,4 +1,4 @@
-"""Custom tag planning and native vision remain isolated from official Caption."""
+"""Direct descriptions and native vision remain isolated from official Caption."""
 
 import asyncio
 import base64
@@ -13,13 +13,12 @@ from test_skill_planner import make_planner
 from moss.commands import HELP, ImageRequest, parse_command
 from moss.config import MossConfig, Planning, Vision
 from moss.media import MetadataReader
-from moss.planner import PlanningError
-from moss.tag_planner import clean_tag_output
+from moss.tag_output import clean_tag_output
 from moss.vision import VisionError, reverse_image
 
 
 @pytest.mark.parametrize(
-    "text",
+    "body",
     [
         '{"caption":"A cup."}',
         "best quality, highres",
@@ -27,45 +26,40 @@ from moss.vision import VisionError, reverse_image
         "I cannot help with that request.",
     ],
 )
-def test_invalid_generate_body_never_repairs_or_substitutes(text):
-    planner, ctx, _ = make_planner([{"success": True, "response": text}])
-    with pytest.raises(PlanningError):
-        asyncio.run(
-            planner.plan(
-                ImageRequest("red cup", 1024, 1024, "generate"),
-                Planning(danbooru_enabled=False),
-            )
+def test_direct_body_is_not_interpreted_as_an_llm_completion(body):
+    if not body:
+        body = "中文短句也可以"
+    planner, ctx, _ = make_planner([])
+    plan = asyncio.run(
+        planner.plan(
+            ImageRequest(body, 1024, 1024, "generate"), Planning(danbooru_enabled=False)
         )
-    assert ctx.llm.generate.await_count == 1
-
-
-@pytest.mark.parametrize("marker", ["", " [[BACKGROUND:portrait]]"])
-def test_portrait_defaults_and_exact_prefix_dedup(marker):
-    planner, ctx, _ = make_planner(
-        [
-            {
-                "success": True,
-                "response": "best quality, HIGHRES, @artist, red coat, red coat"
-                + marker,
-            }
-        ]
     )
+    assert plan.prompt == plan.content_prompt == body
+    ctx.llm.generate.assert_not_awaited()
+
+
+def test_direct_prefix_dedup_never_cleans_body_or_adds_white_background():
+    planner, ctx, _ = make_planner([])
+    body = "highres, 红外套，红外套\n牌子写“hello, 世界！”"
     plan = asyncio.run(
         planner.plan(
             ImageRequest(
-                "红外套",
+                body,
                 1024,
                 1024,
                 "generate",
-                positive_prefix="best quality, highres,",
+                positive_prefix="best quality, highres, BEST QUALITY,",
                 style_prompt="@artist,",
             ),
             Planning(danbooru_enabled=False),
         )
     )
-    assert plan.content_prompt == "red coat, simple background, white background"
+    assert plan.content_prompt == body
+    assert plan.prompt == "best quality\n@artist\n" + body
     assert plan.prompt.count("@artist") == 1
-    assert "HIGHRES" not in plan.prompt and ctx.llm.generate.await_count == 1
+    assert "white background" not in plan.prompt
+    ctx.llm.generate.assert_not_awaited()
 
 
 def test_tag_cleaner_preserves_quoted_lettering_and_character_parentheses():
@@ -85,10 +79,10 @@ def test_tag_cleaner_preserves_quoted_lettering_and_character_parentheses():
 
 
 def test_help_explains_modes_and_reverse_does_not_accept_generation_arguments():
-    assert "千代风格的自然语言扩写生图" in HELP
-    assert "官方自然语言扩写＋布局规划生图" in HELP
-    assert "不是还原原词" in HELP
+    assert "原文直出" in HELP and "官方扩写＋布局规划生图" in HELP
+    assert "非原词" in HELP
     assert "宽×高像素" in HELP
+    assert "\n\n" not in HELP and len(HELP.splitlines()) == 7 and len(HELP) < 320
     with pytest.raises(ValueError):
         parse_command("/moss 反推 顺便生图", MossConfig().rendering)
 
