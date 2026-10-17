@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add explicit OC management with stable appearance, separate optional wardrobe, aliases, owner/configured-admin mutation permissions and request-local snapshots; never select a default character or search OC names on Danbooru.
+- Add one-page comics with 1–4 flexible panels, private storyboards and official flat Layout exports; retain recurring characters across panels and restore frozen visible wording through internal bindings.
+- Add single static memes with square defaults, official Caption/Layout selection and explicit copy preservation without forced lettering or chibi style.
+- Preserve direct-input generation, official pinned resources, model/ComfyUI configuration and at-most-once delivery; no live generation or new release is implied by offline validation.
 - Accept natural canvas clauses such as `，比例4：3`, punctuation-adjacent legacy flags, full-width colons and optional spaces without rewriting the remaining description.
 - Preserve quoted aspect-ratio text, accept repeated equivalent ratios and reject conflicting or malformed canvas instructions instead of silently using the default.
 

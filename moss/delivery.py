@@ -69,6 +69,8 @@ async def send_result(
                 show_log=False,
                 processed_plain_text="[MOSS 风格菜单]"
                 if record.get("action") == "style"
+                else "[MOSS OC 角色库]"
+                if record.get("action") == "role"
                 else "[MOSS 图片反推结果]"
                 if record.get("action") == "reverse"
                 else "[MOSS 法术解析结果]",

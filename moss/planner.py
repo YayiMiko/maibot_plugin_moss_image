@@ -7,6 +7,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from .commands import ImageRequest
+from .oc import OCDefinition
 
 
 class PlanningError(RuntimeError):
@@ -27,10 +28,11 @@ class PromptPlan:
     prefixes: dict = field(default_factory=dict)
     content_prompt: str = ""
     body_format: str = ""
+    storyboard: dict | None = None
 
 
 class Planner:
-    """Reserve comic_page/meme boundaries without exposing unimplemented routes."""
+    """Keep direct text, official drafts and media intent routing isolated."""
 
     def __init__(self, ctx, skill, resolver):
         self.ctx, self.skill, self.resolver = ctx, skill, resolver
@@ -90,11 +92,24 @@ class Planner:
         Raises:
             PlanningError: Reserved intent, provider failure or invalid draft.
         """
-        if request.task_type != "illustration":
+        if request.task_type not in {"illustration", "comic_page", "meme"}:
             raise PlanningError("reserved_task_type")
         if request.oc_context is not None:
-            raise PlanningError("reserved_oc_context")
+            try:
+                if (
+                    not isinstance(request.oc_context, dict)
+                    or set(request.oc_context) != {"characters"}
+                    or not isinstance(request.oc_context["characters"], list)
+                    or not 1 <= len(request.oc_context["characters"]) <= 8
+                ):
+                    raise ValueError("Invalid OC context")
+                for item in request.oc_context["characters"]:
+                    OCDefinition.model_validate(item)
+            except (TypeError, ValueError) as exc:
+                raise PlanningError("invalid_oc_context") from exc
         if request.mode not in {"generate", "caption", "layout"}:
+            raise PlanningError("unsupported_mode")
+        if request.task_type != "illustration" and request.mode == "generate":
             raise PlanningError("unsupported_mode")
         if not request.prompt.strip() or "\x00" in request.prompt:
             raise PlanningError("invalid_input")
@@ -102,22 +117,38 @@ class Planner:
             # Optional research has its own bounded waits and may degrade safely.
             return await self._plan(request, config, record_response)
         return await asyncio.wait_for(
-            self._plan(request, config, record_response), timeout=config.timeout
+            self._plan(request, config, record_response),
+            timeout=config.timeout
+            if request.task_type == "illustration"
+            else config.timeout * 3 + config.danbooru_budget,
         )
 
     async def _plan(self, request, config, record_response) -> PromptPlan:
         """Keep identity extraction, evidence and one structural repair in order."""
         characters = []
+        research_optional = (
+            request.mode == "generate" or request.task_type != "illustration"
+        )
+        oc_names = {
+            name
+            for item in (request.oc_context or {}).get("characters", [])
+            for name in [item["name"], *item["aliases"]]
+        }
         if config.danbooru_enabled:
             instruction = 'Identify only explicitly named existing fictional characters. Return JSON only: {"characters":[{"source_name":"exact substring of user input","copyright":"work name","candidates":["canonical_tag_(work)"]}]}. Return an empty array for unnamed/original characters, ordinary objects and text merely requested for display. Never add a character. Maximum 8 identities and 3 candidate tags per identity. Candidates are unverified search hints, not facts.'
-            if request.mode == "generate":
+            if research_optional:
                 instruction += ' This is identity lookup ONLY, not prompt rewriting, image generation or Caption expansion. Include "depicted":true only for characters explicitly intended to appear. Omit excluded characters, negated subjects, quoted dialogue, signs and names merely requested as visible lettering. Preserve separate people and distinguish aliases of the same person. Do not describe outfits, actions, backgrounds, ages or appearances. If uncertain, omit the identity and return an empty array; never infer extra characters from franchise names.'
+            if oc_names:
+                instruction += (
+                    " These explicit OC names are supplied separately; never search or guess canonical tags for them: "
+                    + json.dumps(sorted(oc_names), ensure_ascii=False)
+                )
             try:
                 extraction = await self._call(
                     instruction, request.prompt, config, record_response, "identity"
                 )
             except Exception as exc:
-                if request.mode != "generate":
+                if not research_optional:
                     raise
                 extraction = '{"characters":[]}'
                 if record_response:
@@ -140,9 +171,10 @@ class Planner:
                         or not name.strip()
                         or name not in request.prompt
                         or name in {"少女", "女孩", "少年", "男孩", "girl", "boy"}
+                        or name in oc_names
                     ):
                         continue
-                    if request.mode == "generate" and (
+                    if research_optional and (
                         item.get("depicted") is not True or name not in visible_input
                     ):
                         continue
@@ -177,7 +209,7 @@ class Planner:
                 # Identity research is optional; malformed hints never replace the request.
                 characters = []
         try:
-            if request.mode == "generate":
+            if research_optional:
                 evidence = (
                     await asyncio.wait_for(
                         self.resolver.resolve(characters, config.danbooru_budget),
@@ -191,7 +223,7 @@ class Planner:
                     characters, config.danbooru_budget
                 )
         except Exception:
-            if request.mode != "generate":
+            if not research_optional:
                 raise
             evidence = []
         if not isinstance(evidence, list):
@@ -215,6 +247,10 @@ class Planner:
         ]
         if request.mode == "generate":
             return self._assemble_direct(request, evidence)
+        if request.task_type != "illustration":
+            from .media_planner import plan_media
+
+            return await plan_media(self, request, config, evidence, record_response)
         system = (
             self.skill.instructions
             + (
@@ -238,6 +274,11 @@ class Planner:
                 "width": request.width,
                 "height": request.height,
                 "character_evidence": evidence,
+                **(
+                    {"oc_characters": request.oc_context["characters"]}
+                    if request.oc_context
+                    else {}
+                ),
             },
             ensure_ascii=False,
         )
@@ -361,6 +402,22 @@ class Planner:
                 "Character identity reference only (same named subjects, not extra people or visible lettering; requested counts, outfits and actions take precedence): "
                 + "; ".join(references)
                 + "."
+            )
+        if request.oc_context:
+            sections.append(
+                "Explicit original characters only; these names refer to the subjects in the user's description, not additional people. User-requested clothing, actions and counts take precedence:\n"
+                + "\n".join(
+                    " / ".join(
+                        json.dumps(name, ensure_ascii=False)
+                        for name in [item["name"], *item["aliases"]]
+                        if name == item["name"]
+                        or name in request.oc_names
+                        or name in request.prompt
+                    )
+                    + ": "
+                    + item["description"]
+                    for item in request.oc_context["characters"]
+                )
             )
         sections.append(request.prompt)
         return PromptPlan(

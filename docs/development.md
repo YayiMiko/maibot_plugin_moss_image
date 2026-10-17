@@ -4,10 +4,12 @@ This is an independent MaiBot plugin, not AstrBot core or the Anima plugin.
 Use public MaiBot SDK APIs only. Never modify sibling projects, host persona,
 account permissions, local ComfyUI workflows or live service configuration.
 
-Keep explicit generate, caption, layout, style, metadata and reverse routes.
-Show style selection and editing only in the style submenu. Raw prompting is
-removed. Do not add status, debug, character libraries, task recovery, image
-editing, comic or meme commands. OC, comic and meme interfaces remain reserved.
+Keep explicit generate, caption, layout, style, character, comic, meme, metadata
+and reverse routes. Show style/OC operations only in their submenus. Raw prompting
+is removed. Do not add status, debug, task recovery, image editing, animated
+memes, image-reference generation or multipage commands. OC use must be explicit;
+only creators and configured library administrators may mutate an existing OC.
+Comic storyboards are internal data; export only official flat Layout fields.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru

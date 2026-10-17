@@ -30,6 +30,9 @@ positive_prefix = "best quality, highres,"
 presets = ["千代风格=@yuasa akira, @tomose shunsaku, @kithera, @enuzoushigaya, 简洁干净的二次元平涂画风，"]
 default_style = "千代风格"
 
+[characters]
+admin_user_ids = []
+
 [rendering]
 unet_name = "moss_image_sft_int8_convrot.safetensors"
 clip_name = "qwen3.5_9b_int8_convrot.safetensors"

@@ -113,7 +113,7 @@ class StyleStore:
             active = self.state["selections"].get(scope, config.default_style)
             if request.operation == "list":
                 return [
-                    "MOSS 风格（仅作用于 /moss 生成）：",
+                    "MOSS 风格（用于原文生成、漫画和表情包）：",
                     "当前：" + (active if active in library else "未配置默认风格"),
                     *[
                         f"{name}：{content}"
@@ -134,7 +134,7 @@ class StyleStore:
                 ):
                     return ["风格选择记录已达上限，请联系维护者。"]
                 state["selections"][scope] = request.name
-                notice = f"已选择风格“{request.name}”，仅作用于你的 /moss 生成。"
+                notice = f"已选择风格“{request.name}”，用于你本会话的原文生成、漫画和表情包。"
             else:
                 exists = request.name in library
                 if request.operation == "edit" and not exists:

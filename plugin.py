@@ -12,6 +12,7 @@ if __package__:
     from .moss.characters import CharacterResolver
     from .moss.commands import COMMAND_PATTERN, HELP, parse_command
     from .moss.config import MossConfig
+    from .moss.oc import OCStore
     from .moss.planner import Planner
     from .moss.skill import OfficialSkill
     from .moss.storage import TaskStore
@@ -21,6 +22,7 @@ else:
     from moss.characters import CharacterResolver
     from moss.commands import COMMAND_PATTERN, HELP, parse_command
     from moss.config import MossConfig
+    from moss.oc import OCStore
     from moss.planner import Planner
     from moss.skill import OfficialSkill
     from moss.storage import TaskStore
@@ -44,9 +46,15 @@ class MossPlugin(MaiBotPlugin):
         await self.store.initialize()
         self.styles = StyleStore(self.store.data)
         await self.styles.initialize()
+        self.characters = OCStore(self.store.data)
+        await self.characters.initialize()
         resolver = CharacterResolver(self.ctx.logger)
         self.runner = TaskRunner(
-            self.ctx, self.store, Planner(self.ctx, skill, resolver), self.styles
+            self.ctx,
+            self.store,
+            Planner(self.ctx, skill, resolver),
+            self.styles,
+            self.characters,
         )
         self.maintenance = asyncio.create_task(self._maintain())
 
@@ -85,7 +93,7 @@ class MossPlugin(MaiBotPlugin):
 
     @Command(
         "moss",
-        description="MOSS 生成、官方规划、布局、风格、法术解析与图片反推",
+        description="MOSS 生图、漫画、表情包、角色、风格与图片解析",
         pattern=COMMAND_PATTERN,
     )
     async def handle_moss(self, **kwargs):
@@ -180,16 +188,29 @@ class MossPlugin(MaiBotPlugin):
             if len(self.jobs) >= config.connection.max_pending:
                 await self.runner.notice("MOSS 队列已满，请稍后再试。", stream)
                 return True, None, 2
-            if action == "generate" and request.mode == "generate":
+            if action == "generate" and (
+                request.mode == "generate" or request.task_type != "illustration"
+            ):
                 style_name, style_prompt = await self.styles.snapshot(
                     scope, config.styles
                 )
                 request = replace(
                     request,
-                    positive_prefix=config.styles.positive_prefix,
+                    positive_prefix=config.styles.positive_prefix
+                    if request.mode == "generate"
+                    else "",
                     style_name=style_name,
                     style_prompt=style_prompt,
                 )
+            if action == "generate" and request.oc_names:
+                try:
+                    request = replace(
+                        request,
+                        oc_context=await self.characters.snapshot(request.oc_names),
+                    )
+                except ValueError as exc:
+                    await self.runner.notice(str(exc), stream)
+                    return True, None, 2
             record = await self.store.create(task_id, scope, action)
             if record is None:
                 return True, None, 2

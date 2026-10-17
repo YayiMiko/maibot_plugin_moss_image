@@ -10,7 +10,7 @@ def build_workflow(request, prompt: str, config, seed: int, task_id: str) -> dic
 
     Args:
         request: Validated fixed canvas.
-        prompt: Caption or compiled Layout, never prefixed with quality tags.
+        prompt: Direct description, official Caption or compiled Layout.
         config: Detached model and sampling configuration.
         seed: Task-owned random seed.
         task_id: Internal hexadecimal output namespace.

@@ -22,8 +22,6 @@ from moss.workflow import build_workflow
         "核对任务",
         "恢复任务",
         "调试",
-        "漫画",
-        "表情包",
         "无优化",
     ],
 )
@@ -38,6 +36,9 @@ def test_removed_routes_cannot_accidentally_generate(word):
         ("/moss 生成 cup", "generate", "generate"),
         ("/moss 规划 cup", "generate", "caption"),
         ("/moss 布局 poster", "generate", "layout"),
+        ("/moss 漫画 story", "generate", "layout"),
+        ("/moss 表情包 expression", "generate", "caption"),
+        ("/moss 角色", "role", None),
         ("/moss 风格", "style", None),
         ("[image] /moss 解析法术", "metadata", None),
         ("[image] /moss 反推", "reverse", None),

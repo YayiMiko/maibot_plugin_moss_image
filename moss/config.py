@@ -163,6 +163,15 @@ class Vision(PluginConfigBase):
     timeout: int = Field(default=180, ge=10, le=600)
 
 
+class Characters(PluginConfigBase):
+    __ui_label__ = "OC 角色库"
+    admin_user_ids: list[str] = Field(
+        default_factory=list,
+        max_length=64,
+        description="允许编辑、删除其他人 OC 的用户 ID；留空仅创建者可修改。不使用群昵称或客户端管理员标记。",
+    )
+
+
 class MossConfig(PluginConfigBase):
     plugin: PluginMetadata = Field(default_factory=PluginMetadata)
     connection: Connection = Field(default_factory=Connection)
@@ -171,3 +180,4 @@ class MossConfig(PluginConfigBase):
     rendering: Rendering = Field(default_factory=Rendering)
     delivery: Delivery = Field(default_factory=Delivery)
     vision: Vision = Field(default_factory=Vision)
+    characters: Characters = Field(default_factory=Characters)

@@ -163,7 +163,7 @@ def test_two_invalid_drafts_fail_without_default_image():
     assert ctx.llm.generate.await_count == 2
 
 
-@pytest.mark.parametrize("intent", ["comic_page", "meme"])
+@pytest.mark.parametrize("intent", ["comic_book", "animation"])
 def test_future_intents_are_reserved_without_calls(intent):
     planner, ctx, resolver = make_planner([])
     with pytest.raises(PlanningError, match="reserved_task_type"):
@@ -419,9 +419,9 @@ def test_empty_candidates_do_not_call_danbooru_but_retain_source(monkeypatch):
     ]
 
 
-def test_oc_interface_is_reserved_without_calls():
+def test_invalid_oc_context_is_rejected_without_calls():
     planner, ctx, resolver = make_planner([])
-    with pytest.raises(PlanningError, match="reserved_oc_context"):
+    with pytest.raises(PlanningError, match="invalid_oc_context"):
         asyncio.run(
             planner.plan(
                 ImageRequest("a person", 1024, 1024, oc_context={"name": "future"}),

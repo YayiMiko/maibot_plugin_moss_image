@@ -17,9 +17,10 @@ from .workflow import build_workflow
 class TaskRunner:
     """Separate planning from serial GPU submission and at-most-once delivery."""
 
-    def __init__(self, ctx, store, planner, styles):
+    def __init__(self, ctx, store, planner, styles, characters):
         self.ctx, self.store, self.planner = ctx, store, planner
         self.styles = styles
+        self.characters = characters
         self.gpu_lock = asyncio.Lock()
 
     async def run(self, record: dict, action: str, request, config, context: dict):
@@ -39,10 +40,19 @@ class TaskRunner:
             async def capture(stage, response):
                 await self.store.append_llm(record["task_id"], stage, response)
 
-            if action != "style":
+            if action not in {"style", "role"}:
                 await self.store.begin_llm(record)
-            if action in {"metadata", "style", "reverse"}:
-                if action == "style":
+            if action in {"metadata", "style", "reverse", "role"}:
+                if action == "role":
+                    record["status"] = "editing_role"
+                    await self.store.save(record)
+                    parts = await self.characters.handle(
+                        request,
+                        context["user_id"],
+                        config.characters.admin_user_ids,
+                        record["task_id"],
+                    )
+                elif action == "style":
                     record["status"] = "editing_style"
                     await self.store.save(record)
                     parts = await self.styles.handle(
@@ -100,6 +110,7 @@ class TaskRunner:
                     width=request.width,
                     height=request.height,
                     body_format=plan.body_format,
+                    task_type=request.task_type,
                     planner="direct-input"
                     if request.mode == "generate"
                     else "official-skill",
@@ -109,6 +120,14 @@ class TaskRunner:
                 if plan.draft is not None:
                     await asyncio.to_thread(
                         atomic_write, directory / "draft.json", plan.draft
+                    )
+                if plan.storyboard is not None:
+                    await asyncio.to_thread(
+                        atomic_write, directory / "storyboard.json", plan.storyboard
+                    )
+                if request.oc_context is not None:
+                    await asyncio.to_thread(
+                        atomic_write, directory / "characters.json", request.oc_context
                     )
                 await asyncio.to_thread(
                     atomic_write, directory / "prompt.txt", plan.prompt
@@ -219,6 +238,8 @@ class TaskRunner:
                     )
             elif action == "metadata":
                 notice = "未能读取本次图片，请附图或引用同一会话中含图片的消息。"
+            elif action == "role":
+                notice = "角色操作未完成，请检查名称、外观或别名格式；没有自动重试。"
             else:
                 notice = "MOSS 任务未完成，没有自动重试；请联系维护者检查。"
             await self.notice(notice, context["stream_id"])

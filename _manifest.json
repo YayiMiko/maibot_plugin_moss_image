@@ -3,7 +3,7 @@
   "id": "yayimiko.moss-image",
   "name": "MOSS 绘图",
   "version": "0.1.2",
-  "description": "Direct-text MOSS generation, official Caption/Layout planning, image metadata and vision reverse prompting.",
+  "description": "Direct-text MOSS images, official single-page comics and static memes, explicit OC presets, metadata and vision reverse prompting.",
   "author": {"name": "YayiMiko", "url": "https://github.com/YayiMiko"},
   "urls": {"repository": "https://github.com/YayiMiko/maibot_plugin_moss_image"},
   "license": "MIT",
