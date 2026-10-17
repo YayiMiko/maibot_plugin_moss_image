@@ -28,6 +28,13 @@ def test_vendor_actual_lookup_and_ttl_cache(monkeypatch):
 
     def get(url, **kwargs):
         calls.append(url)
+        if "/wiki_pages.json" in url:
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: [
+                    {"title": "lumine_(genshin_impact)", "other_names": ["荧"]}
+                ],
+            )
         if "/tags.json" in url:
             return SimpleNamespace(
                 status_code=200,
@@ -60,6 +67,9 @@ def test_lookup_evidence_categories(monkeypatch, category, deprecated, expected)
     resolver = CharacterResolver(logging.getLogger("lookup"))
     module = resolver.module
     monkeypatch.setattr(
+        resolver, "_source_tags", lambda *args: ["lumine_(genshin_impact)"]
+    )
+    monkeypatch.setattr(
         module,
         "_fetch_stable_identity_tags",
         lambda *a, **kw: ("blonde_hair",),
@@ -86,6 +96,7 @@ def test_lookup_evidence_categories(monkeypatch, category, deprecated, expected)
 def test_lookup_rejects_popular_namesake_from_other_work(monkeypatch):
     resolver = CharacterResolver(logging.getLogger("lookup"))
     module = resolver.module
+    monkeypatch.setattr(resolver, "_source_tags", lambda *args: ["pandora_(re:zero)"])
     monkeypatch.setattr(
         resolver,
         "_query_records",

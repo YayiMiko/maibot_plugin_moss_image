@@ -12,9 +12,146 @@ from test_media_planner import envelope, story
 from moss.characters import CharacterResolver
 
 
+def wiki_page(title, *names):
+    """Build source-name evidence, distinct from a tag's mere existence."""
+    return {"title": title, "other_names": list(names), "is_deleted": False}
+
+
 def response(records=(), status=200):
     """Build the public read-only metadata response used by offline transports."""
     return SimpleNamespace(status_code=status, json=lambda: list(records))
+
+
+@pytest.mark.parametrize(
+    "hints", [[], ["卡提希娅_(鸣潮)"], ["cantarella_(wuthering_waves)"]]
+)
+def test_source_alias_evidence_recovers_missing_invalid_and_wrong_character_hints(
+    monkeypatch, hints
+):
+    resolver = CharacterResolver(logging.getLogger("source-name"))
+    correct = "cartethyia_(wuthering_waves)"
+    calls = []
+
+    def get(url, **kwargs):
+        params = kwargs["params"]
+        calls.append((url, params))
+        if url.endswith("/wiki_pages.json"):
+            assert params["search[other_names_match]"] == "卡提希娅"
+            return response([wiki_page(correct, "Cartethyia", "卡提希娅")])
+        if url.endswith("/tags.json"):
+            assert params["search[name_matches]"] == correct
+            return response([{"name": correct, "category": 4, "post_count": 2496}])
+        pytest.fail("A verified source name must not search a guessed wrong identity")
+
+    monkeypatch.setattr(resolver.module.requests, "get", get)
+    monkeypatch.setattr(
+        resolver.module, "_fetch_stable_identity_tags", lambda *a, **kw: ()
+    )
+    source = [{"source_name": "卡缇希娅", "copyright": "鸣潮", "candidates": hints}]
+    result = resolver._lookup(source)[0]
+    assert result["canonical_tag"] == correct and result["status"] == "verified"
+    assert result["identity_basis"] == "published_other_name"
+    before = len(calls)
+    resolver._lookup([{**source[0], "candidates": ["invented_other_character"]}])
+    assert len(calls) == before
+
+
+def test_existing_wrong_tag_is_not_identity_evidence(monkeypatch):
+    resolver = CharacterResolver(logging.getLogger("wrong-existing-tag"))
+    wrong = "cantarella_(wuthering_waves)"
+
+    def get(url, **kwargs):
+        if url.endswith("/tags.json"):
+            return response([{"name": wrong, "category": 4, "post_count": 1990}])
+        if url.endswith("/wiki_pages.json"):
+            return response([wiki_page(wrong, "Cantarella", "坎特蕾拉")])
+        return response()
+
+    monkeypatch.setattr(resolver.module.requests, "get", get)
+    result = resolver._lookup([{"source_name": "卡缇希娅", "candidates": [wrong]}])[0]
+    assert result["status"] == "unresolved" and "canonical_tag" not in result
+    assert result["lookup_reason"] == "identity_unconfirmed"
+
+
+@pytest.mark.parametrize("kind", ["multiple", "partial", "deleted", "general"])
+def test_source_wiki_never_turns_ambiguous_or_non_character_matches_into_verified_identity(
+    monkeypatch, kind
+):
+    resolver = CharacterResolver(logging.getLogger("wiki-boundaries"))
+
+    def get(url, **kwargs):
+        if url.endswith("/wiki_pages.json"):
+            page = wiki_page("name_(game)", "角色原名")
+            if kind == "multiple":
+                return response([page, wiki_page("other_(game)", "角色原名")])
+            if kind == "partial":
+                page["other_names"] = ["角色原名的同名人物"]
+            if kind == "deleted":
+                page["is_deleted"] = True
+            return response([page])
+        if url.endswith("/tags.json"):
+            return response([{"name": "name_(game)", "category": 0, "post_count": 10}])
+        return response()
+
+    monkeypatch.setattr(resolver.module.requests, "get", get)
+    result = resolver._lookup([{"source_name": "角色原名", "candidates": []}])[0]
+    assert result["status"] != "verified"
+
+
+@pytest.mark.parametrize(
+    "hints", [[], ["卡提希娅_(鸣潮)"], ["cantarella_(wuthering_waves)"]]
+)
+def test_real_planner_keeps_original_body_and_submits_source_verified_identity(
+    plugin, command, comfy_transport, monkeypatch, hints
+):
+    plugin.config.planning.danbooru_enabled = True
+    body = "鸣潮角色卡缇希娅在教堂里祈祷"
+    command["text"] = "/moss 生成 " + body
+    plugin.ctx.llm.generate.return_value = {
+        "success": True,
+        "response": json.dumps(
+            {
+                "characters": [
+                    {
+                        "source_name": "卡缇希娅",
+                        "copyright": "鸣潮",
+                        "candidates": hints,
+                        "depicted": True,
+                    }
+                ]
+            }
+        ),
+    }
+
+    def get(url, **kwargs):
+        if url.endswith("/wiki_pages.json"):
+            return response([wiki_page("cartethyia_(wuthering_waves)", "卡提希娅")])
+        return response(
+            [{"name": "cartethyia_(wuthering_waves)", "category": 4, "post_count": 100}]
+        )
+
+    async def run():
+        await plugin.on_load()
+        resolver = plugin.runner.planner.resolver
+        monkeypatch.setattr(resolver.module.requests, "get", get)
+        monkeypatch.setattr(
+            resolver.module, "_fetch_stable_identity_tags", lambda *a, **kw: ()
+        )
+        try:
+            await plugin.handle_moss(**command)
+            await asyncio.gather(*list(plugin.jobs.values()))
+            submission = next(
+                call for call in comfy_transport if call.url.path == "/prompt"
+            )
+            prompt = json.loads(submission.content)["prompt"]["4"]["inputs"]["text"]
+            assert prompt.endswith(body)
+            assert "cartethyia_(wuthering_waves)" in prompt
+            assert "cantarella_" not in prompt and "卡提希娅_(鸣潮)" not in prompt
+            assert plugin.ctx.llm.generate.await_count == 1
+        finally:
+            await plugin.on_unload()
+
+    asyncio.run(run())
 
 
 @pytest.mark.parametrize(

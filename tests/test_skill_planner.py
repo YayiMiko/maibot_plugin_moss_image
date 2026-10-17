@@ -299,6 +299,15 @@ def test_danbooru_adapter_uses_character_evidence_not_tag_replacement(monkeypatc
     module = resolver.module
     monkeypatch.setattr(
         resolver,
+        "_source_tags",
+        lambda names, *args: [
+            {"荧": "lumine_(genshin_impact)", "纳西妲": "nahida_(genshin_impact)"}[
+                names[0]
+            ]
+        ],
+    )
+    monkeypatch.setattr(
+        resolver,
         "_query_records",
         lambda query, *args: [module.TagRecord(query, 4, 100, source="test")],
     )
@@ -457,6 +466,7 @@ def test_generate_uses_verified_identity_as_a_binding_not_an_extra_subject():
 
 def test_empty_candidates_use_original_name_autocomplete_without_guessing(monkeypatch):
     resolver = CharacterResolver(logging.getLogger("empty-candidates"))
+    monkeypatch.setattr(resolver, "_source_tags", lambda *args: [])
     monkeypatch.setattr(
         resolver,
         "_query_records",

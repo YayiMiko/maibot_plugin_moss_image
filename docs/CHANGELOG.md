@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bind candidate tags to independently queried original-name wiki aliases or existing explicit aliases before treating tag existence as identity verification. Resolve published alternate names even when the LLM returns Chinese or wrong-character candidates; cache source-name evidence without caching LLM guesses. Recognize the existing Cartethyia spelling variant without rewriting user descriptions.
+- Clarify ASCII canonical-tag hints in identity extraction, and add offline regressions for same-work wrong identities, missing/invalid hints, ambiguous aliases and final workflow submissions. Preserve the v0.2.0 direct-input boundary, existing media/style fixes, rendering settings and pinned official resources.
 - Prune redundant style/media parameter combinations and prompt-string assertions; retain original-name online-resolution paths, rejection/timeout boundaries and final workflow assertions rather than using test count as acceptance evidence.
 - Resolve extracted original names through known alias hints and online exact/autocomplete metadata, rather than depending only on LLM romanization. Local aliases still require live character-category evidence; ambiguous or cross-work names are not selected by popularity.
 - Preserve per-task candidates, bounded HTTP traces and specific lookup reasons. Publish verified identities before optional appearance requests and retain request-local partial results when the lookup budget expires.

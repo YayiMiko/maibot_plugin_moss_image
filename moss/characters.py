@@ -11,6 +11,17 @@ import unicodedata
 from .skill import ROOT
 
 
+def identity_name(value: str) -> str:
+    """Normalize names without fuzzy matching different characters."""
+    return " ".join(
+        unicodedata.normalize("NFKC", value).casefold().replace("_", " ").split()
+    )
+
+
+# Accepted source-name spelling variants, not unconditional canonical tag bindings.
+SOURCE_NAME_VARIANTS = {"卡缇希娅": ("卡提希娅", "卡提希婭")}
+
+
 class CharacterResolver:
     """Bound blocking lookups across requests, including timed-out workers."""
 
@@ -120,6 +131,85 @@ class CharacterResolver:
         self.cache[key] = (time.monotonic(), None, "source_unavailable")
         return None
 
+    def _source_tags(self, names, deadline, trace):
+        """Find canonical titles whose published alternate names match the source.
+
+        Args:
+            names: Original name and explicitly supported spelling variants.
+            deadline: Request-local monotonic deadline.
+            trace: Bounded diagnostic events for this lookup.
+
+        Returns:
+            Canonical wiki titles with exact source-name evidence, not LLM guesses.
+        """
+        for name in names:
+            key = f"moss:wiki_name:{identity_name(name)}"
+            cached = self.cache.get(key)
+            if cached and time.monotonic() - cached[0] < (3600 if cached[1] else 60):
+                trace.append(
+                    {
+                        "query": name,
+                        "endpoint": "wiki_pages",
+                        "cache_hit": True,
+                        "outcome": "records" if cached[1] else "not_found",
+                    }
+                )
+                if cached[1]:
+                    return list(cached[1])
+                continue
+            for source in self.module.DEFAULT_DONMAI_BASE_URLS:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return []
+                attempt = {"query": name, "endpoint": "wiki_pages", "source": source}
+                trace.append(attempt)
+                try:
+                    response = self.module.requests.get(
+                        source + "/wiki_pages.json",
+                        params={"search[other_names_match]": name, "limit": 20},
+                        timeout=min(1.5, remaining),
+                        headers={
+                            "User-Agent": "MaiBotMOSS/0.2",
+                            "Accept": "application/json",
+                        },
+                    )
+                    attempt["status_code"] = response.status_code
+                    if response.status_code != 200:
+                        continue
+                    data = response.json()
+                    if not isinstance(data, list):
+                        attempt["error"] = "invalid_response"
+                        continue
+                    matches = []
+                    for page in data[:20]:
+                        if not isinstance(page, dict) or page.get("is_deleted"):
+                            continue
+                        title, aliases = page.get("title"), page.get("other_names")
+                        if (
+                            isinstance(title, str)
+                            and re.fullmatch(r"[a-z0-9_.'():-]{3,100}", title)
+                            and isinstance(aliases, list)
+                            and any(
+                                isinstance(alias, str)
+                                and identity_name(alias) == identity_name(name)
+                                for alias in aliases
+                            )
+                            and title not in matches
+                        ):
+                            matches.append(title)
+                    attempt["matches"] = len(matches)
+                    self.cache[key] = (time.monotonic(), tuple(matches), "source_names")
+                    if matches:
+                        return matches
+                    break
+                except (
+                    self.module.requests.RequestException,
+                    ValueError,
+                    TypeError,
+                ) as exc:
+                    attempt["error"] = type(exc).__name__
+        return []
+
     def _lookup(
         self, characters: list[dict], *, deadline=None, progress=None
     ) -> list[dict]:
@@ -174,7 +264,38 @@ class CharacterResolver:
                 degraded = None
                 reason = "no_matching_character_tag"
                 progress[character["source_name"]] = dict(base)
+                names = [*SOURCE_NAME_VARIANTS.get(source_name, ()), source_name]
+                trusted = {
+                    self.module.KNOWN_CANONICAL_CORE_TAGS.get(alias, alias)
+                    for alias in aliases
+                }
+                # An explicit English name may match its tag stem directly. A foreign
+                # name and an unrelated existing tag need independent alias evidence.
+                trusted.update(
+                    candidate
+                    for candidate in candidates
+                    if identity_name(candidate) == identity_name(source_name)
+                    or identity_name(candidate.split("_(", 1)[0])
+                    == identity_name(source_name)
+                )
+                if trusted:
+                    base["identity_basis"] = "source_name_or_known_alias"
+                else:
+                    trusted.update(self._source_tags(names, deadline, trace))
+                    if trusted:
+                        base["identity_basis"] = "published_other_name"
+                if len(trusted) > 1 and not aliases:
+                    base.update(
+                        lookup_reason="ambiguous_identity", lookup_trace=trace[-8:]
+                    )
+                    answers.append(base)
+                    progress[character["source_name"]] = dict(base)
+                    continue
+                candidates = list(dict.fromkeys([*sorted(trusted), *candidates]))[:8]
+                base["candidates"] = candidates
                 for candidate in candidates:
+                    if candidate not in trusted:
+                        continue
                     records = self._query_records(candidate, False, deadline, trace)
                     progress[character["source_name"]] = {
                         **base,
@@ -196,11 +317,11 @@ class CharacterResolver:
                         break
                 # Original-name autocomplete can resolve multilingual aliases; scoped
                 # stem searches must still agree on the work, never on popularity.
-                queries = [(source_name, None)]
+                queries = [(name, None) for name in names]
                 queries.extend(
                     (candidate.split("_(", 1)[0], candidate)
                     for candidate in candidates
-                    if "_(" in candidate
+                    if candidate in trusted and "_(" in candidate
                 )
                 seen = set()
                 for query, scoped in queries:
@@ -218,6 +339,9 @@ class CharacterResolver:
                         ):
                             continue
                         normalized = self.module._normalize_query(record.name)
+                        if trusted and normalized not in trusted:
+                            reason = "identity_mismatch"
+                            continue
                         if scoped:
                             parts = normalized.split("_(", 1)
                             work = set(
@@ -251,6 +375,7 @@ class CharacterResolver:
                         matches[normalized] = record
                     if len(matches) == 1:
                         best = next(iter(matches.values()))
+                        base.setdefault("identity_basis", "source_name_autocomplete")
                     elif len(matches) > 1:
                         reason = "ambiguous_identity"
                         break
@@ -264,6 +389,12 @@ class CharacterResolver:
                         ],
                     )
                 else:
+                    if (
+                        candidates
+                        and not trusted
+                        and reason == "no_matching_character_tag"
+                    ):
+                        reason = "identity_unconfirmed"
                     if time.monotonic() >= deadline:
                         reason = "lookup_budget_exhausted"
                     elif trace and all(
