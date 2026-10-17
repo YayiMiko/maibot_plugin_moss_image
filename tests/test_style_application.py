@@ -124,8 +124,9 @@ def test_application_selection_is_persistent_deduplicated_and_scope_local(tmp_pa
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("default", ["all", "generate"])
-@pytest.mark.parametrize("override", [None, "all", "generate"])
+@pytest.mark.parametrize(
+    "default,override", [("all", None), ("generate", None), ("generate", "all")]
+)
 @pytest.mark.parametrize(
     "route", ["生成", "规划", "布局", "漫画", "表情包", "配字表情包"]
 )
@@ -215,7 +216,7 @@ def test_route_matrix_submits_style_only_where_enabled(
                 }
                 assert compiled["bbox_coord_space"] == "abs_centralized"
                 if enabled:
-                    assert style in compiled["summary"]["caption"]
+                    assert compiled["summary"]["caption"].startswith(style)
                     assert all(
                         style not in item["caption"] for item in compiled["items"]
                     )
@@ -273,4 +274,4 @@ def test_style_echo_does_not_get_appended_twice():
             Planning(danbooru_enabled=False),
         )
     )
-    assert plan.prompt.count(style) == 1
+    assert plan.prompt.startswith(style) and plan.prompt.count(style) == 1

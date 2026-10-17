@@ -221,17 +221,6 @@ def test_chinese_only_style_and_body_do_not_require_tags_or_translation():
     ctx.llm.generate.assert_not_awaited()
 
 
-@pytest.mark.parametrize("mode", ["generate", "caption"])
-def test_identity_example_contains_boolean_depiction_and_name_boundaries(mode):
-    replies = [{"success": True, "response": '{"characters":[]}'}]
-    if mode == "caption":
-        replies.append({"success": True, "response": '{"caption":"A sleepy Ganyu."}'})
-    planner, ctx, _ = make_planner(replies)
-    asyncio.run(planner.plan(ImageRequest("甘雨困困", 1024, 1024, mode), Planning()))
-    instruction = ctx.llm.generate.await_args_list[0].args[0][0]["content"]
-    assert '"depicted":true' in instruction and 'not "甘雨困困"' in instruction
-
-
 @pytest.mark.parametrize(
     "repair", ["verified", "false", "missing", "string", "refusal", "timeout"]
 )

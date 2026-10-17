@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Prune redundant style/media parameter combinations and prompt-string assertions; retain original-name online-resolution paths, rejection/timeout boundaries and final workflow assertions rather than using test count as acceptance evidence.
 - Resolve extracted original names through known alias hints and online exact/autocomplete metadata, rather than depending only on LLM romanization. Local aliases still require live character-category evidence; ambiguous or cross-work names are not selected by popularity.
 - Preserve per-task candidates, bounded HTTP traces and specific lookup reasons. Publish verified identities before optional appearance requests and retain request-local partial results when the lookup budget expires.
 - Preserve verified Danbooru identity bindings through comic/meme exports, validate per-panel/item references, and inject canonical tags in legal Caption/Layout descriptions rather than relying on LLM copying. Unverified identities remain unverified and OC names are never inferred.

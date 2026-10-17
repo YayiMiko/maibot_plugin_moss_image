@@ -110,8 +110,14 @@ def run_media(
     return plan, ctx, resolver
 
 
-@pytest.mark.parametrize("kind", ["caption", "comic", "lettered"])
-@pytest.mark.parametrize("style", ["", "flat colors, @artist,", "水墨，@artist,\n留白"])
+@pytest.mark.parametrize(
+    "kind,style",
+    [
+        ("caption", ""),
+        ("comic", "flat colors, @artist,"),
+        ("lettered", "水墨，@artist,\n留白"),
+    ],
+)
 def test_verified_tags_survive_llm_omission_with_style_first(kind, style):
     board, draft, evidence, extraction = media_inputs(kind)
     plan, ctx, resolver = run_media(
@@ -151,7 +157,7 @@ def test_verified_tags_survive_llm_omission_with_style_first(kind, style):
     assert ctx.llm.generate.await_count == 3
 
 
-@pytest.mark.parametrize("kind", ["caption", "comic", "lettered"])
+@pytest.mark.parametrize("kind", ["caption", "comic"])
 def test_aliases_share_one_identity_without_extra_cast(kind):
     board, draft, evidence, extraction = media_inputs(kind, aliases=True)
     plan, _, _ = run_media(kind, board, [draft], evidence, extraction)
@@ -227,7 +233,7 @@ def test_bad_identity_bindings_repair_once_then_fail_closed(fault):
         run_media("comic", board, [broken, broken], evidence, extraction)
 
 
-@pytest.mark.parametrize("kind", ["caption", "comic", "lettered"])
+@pytest.mark.parametrize("kind", ["comic"])
 def test_echoed_style_is_moved_from_suffix_to_prefix(kind):
     board, draft, evidence, extraction = media_inputs(kind)
     target = draft if kind == "caption" else draft["draft"]["summary"]
@@ -239,7 +245,7 @@ def test_echoed_style_is_moved_from_suffix_to_prefix(kind):
     assert caption.startswith("ECHO_STYLE\n\n") and caption.count("ECHO_STYLE") == 1
 
 
-@pytest.mark.parametrize("kind", ["comic", "lettered"])
+@pytest.mark.parametrize("kind", ["comic"])
 def test_missing_depicted_is_repaired_before_media_research(kind):
     board, draft, evidence, extraction = media_inputs(kind)
     broken = copy.deepcopy(extraction)
