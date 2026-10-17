@@ -3,21 +3,34 @@
 独立 MaiBot 插件：使用官方 MOSS-Image Prompt Enhancer skill 将自然语言规划为
 Caption 或 Layout，通过 ComfyUI 的 MOSS 工作流生成图片并发送到 QQ。
 
-当前版本 **v0.1.1**。已完成离线验证，尚未部署或完成真实 QQ／图像质量验收。
+当前源码包含下一版本的未发布改动。离线验证与服务器部署、真实 QQ 收图和画面验收分开进行。
 
-[下载发布包](https://github.com/YayiMiko/maibot_plugin_moss_image/releases/latest) · [更新记录](docs/CHANGELOG.md) · [开发说明](docs/development.md)
+[源码](https://github.com/YayiMiko/maibot_plugin_moss_image) · [更新记录](docs/CHANGELOG.md) · [开发说明](docs/development.md)
 
 ## 指令
 
 ```text
-/moss 少女在雨后的车站等车
+/moss 生成 成年旅人在雨后的车站等车
+/moss 规划 白色小猫坐在窗边
 /moss 布局 一张咖啡店海报，标题写“今日也要好好休息”
-/moss 无优化 A quiet railway platform after the rain.
+/moss 风格
 /moss 解析法术
 ```
 
-只提供以上四种写法；直接 `/moss` 查看帮助。不提供角色／风格管理、状态、
-调试、任务核对或恢复指令。普通聊天提到 MOSS 不触发生成。
+直接 `/moss` 查看帮助；不带子命令的 `/moss <要求>` 和 `/moss 无优化` 已移除。
+不提供角色管理、状态、调试、任务核对或恢复指令。普通聊天提到 MOSS 不触发生成。
+
+`/moss 风格` 二级菜单展示选择、新建和编辑操作，主菜单不罗列这些子命令：
+
+```text
+/moss 风格 千代风格
+/moss 风格 新建 墨色=monochrome ink illustration,
+/moss 风格 编辑 墨色=monochrome ink illustration, restrained shading,
+```
+
+没有风格关闭指令。选择仅影响同一用户、同一会话的后续 `/moss 生成`；风格库共享，
+新建或编辑沿用宿主对 MOSS 命令的使用权限，不授予修改宿主配置的权限。
+聊天修改保存在插件私有 `styles.json`，覆盖配置中的同名风格；菜单会展示当前生效内容。
 
 可用 `--尺寸 1024x1024` 或 `--比例 16:9` 设置单次画幅。明确尺寸须为 16 倍数，
 且满足配置的像素上限；不静默改尺寸。默认使用本机工作流的 3:4、1MP 策略，
@@ -34,6 +47,8 @@ ComfyUI。宿主的群聊白名单／发送权限仍然有效。
 1. `connection.comfyui_base_url`：从 **MaiBot 所在机器** 能访问的 ComfyUI 地址。
 2. `planning.model_task`／`model_name`：宿主已配置的规划模型；不会注入聊天人设。
 3. `rendering`：与 ComfyUI 文件名一致的 MOSS 主模型、编码器和 VAE。
+4. `styles`：仅用于生成模式的正面前缀、风格列表和默认风格。前缀默认
+   `best quality, highres,`；负面提示词仍在 `rendering.negative_prompt` 中配置。
 
 [配置示例](docs/config.example.toml) 不含凭证，需要时复制到插件根目录并命名为
 `config.toml`。跨机器部署不能把回环地址当成
@@ -49,16 +64,23 @@ ComfyUI。宿主的群聊白名单／发送权限仍然有效。
 完整官方 skill、Layout 参考和编译器随插件携带，来源、固定版本及哈希见
 `vendor/provenance.json`；不依赖开发者电脑上的 Codex 安装目录。启动时验证哈希。
 
-规划模型负责描述和像素坐标草稿，官方编译器负责验证和转换。只将 Caption 正文
-或单行编译 Layout 交给 MOSS；不会拼接 Anima 画师串、质量词、白底或固定角色。
+`/moss 生成` 参考 AstrBot Anima 的职责拆分：先确定前缀、角色身份、所选风格和画幅，
+再将原始要求与只读上下文交给官方 Caption 扩写；不先生成 tags 再二次改写。
+最终由程序组合“固定前缀 + 已确认角色（未确认则保留原名）+ 风格 + 官方 Caption 正文”。
+未明确提及背景时按简单白底立绘处理；明确场景时保留。默认千代风格包含画师词与
+平涂描述，不固定年龄或人数，也没有独立画师预设模块。
+
+`/moss 规划` 强制官方 Caption，不注入上述前缀、风格或白底规则；`/moss 布局`
+强制官方 Layout，不在 JSON 外拼接前缀。两条 Caption 路径共用扩写器和官方编译器。
+生成模式的完整提示词是插件包装，并非未经修改的官方编译输出；官方资源本身不改。
 结构错误最多请求一次文字修正，明确拒绝、服务错误或截断不会重试或提交默认图。
 官方 skill 面向工具型 GPT-6 agent；宿主 LLM 的实际遵循和画面效果仍需实测。
 
 Danbooru 校正独立用于用户明确点名的角色。通过 LLM 提取原文名称和候选，使用
 Anima 的查询证据与类别验证，向规划器提供身份资料和外观锚点。不替换完整提示词、
 不清洗自然语言或 JSON、不将候选当成确认结果，也不添加用户未点名的角色。
-查询失败仍保留原始需求。无优化模式跳过全部 LLM 和角色查询；输入 Layout JSON
-时仅检查模型格式和画幅边界，不重写正文。尺寸旗标应放在原样 JSON 之前。
+候选先规范化大小写和空白再校验；候选无效或查询失败仍保留原名及作品上下文。
+Caption 正文不按逗号拆分，不应用 Anima Tag 清洗器。
 
 `workflows/moss-int8-api.json` 保留原生 MOSS INT8、`moss_image` 编码器、FLUX.2 VAE、
 Flow shift 5、负分支 SLG 第 22 层，以及 Euler／sgm_uniform、50 步／CFG 3。
@@ -68,28 +90,30 @@ Flow shift 5、负分支 SLG 第 22 层，以及 Euler／sgm_uniform、50 步／
 ## 任务与发送
 
 任务按会话、用户和消息编号去重，使用独立配置快照、随机 seed 和输出目录。
-每个任务保存草稿、编译提示词、实际工作流和采样结果。GPU 提交串行，发送等待
+每个生图任务分别保存 `draft.json`、官方正文 `compiled_prompt.txt`、前缀快照
+`prefixes.json`、最终提交的 `prompt.txt`、配置、实际工作流和采样结果。GPU 提交串行，发送等待
 不占采样锁；多插件的最终 GPU 排队交给 ComfyUI。
 
 成功只发送图片。不确定是否提交或是否送达时记录 `remote_unknown`／
 `delivery_unknown`，不自动重提、重发或全局中断 ComfyUI。只有明确成功且含平台
 消息 ID 的回执才算已发送。插件重载只分类旧任务，不恢复或重试它们。
 
-群聊长法术文本默认超过 800 字符时发送一张合并转发卡片；不明回执不改成长正文
+群聊长法术或风格菜单默认超过 800 字符时发送一张合并转发卡片；不明回执不改成长正文
 重发。私聊／短结果直发，展示上限 32768 字符并标记省略，不影响模型输出。
 发送等待默认 200 秒，SDK 内层为 190 秒；适配器、消息网关及 NapCat 的内层
 等待仍由宿主控制。插件没有修改共享网关源码或重启 NapCat。
 
 原始 LLM 返回只在插件私有 `last_llm_response.json` 保留最近一次任务，最多 4 次
 调用；单条正文／拒绝各限 32768 字符，超限标记截断。新任务覆盖，迟到返回不覆盖
-新任务；原样／解析任务清空旧调用。诊断不会自动发到 QQ，历史任务不存原始回复。
+新任务；解析任务清空旧调用，风格操作不改动生图诊断。诊断不会自动发到 QQ，历史任务不存原始回复。
 
 任务默认保留 30 天，仅清理过期已结束记录和对应任务目录。未知远端任务、活动
 任务、损坏记录、孤立目录及链接目标保留。删除不可恢复；0 关闭时间清理。
 
 ## 二期接口
 
-内部 `ImageRequest.task_type` 预留 `comic_page` 和 `meme`，首版调用会明确拒绝，
+内部 `ImageRequest.oc_context` 预留 OC 预设上下文，当前非空调用明确拒绝；没有角色库或默认角色。
+`ImageRequest.task_type` 预留 `comic_page` 和 `meme`，当前调用会明确拒绝，
 没有注册对应命令。二期规划器可生成同一官方 Layout 草稿，并复用角色、采样和
 发送边界；不提前提供多页工程、图生图、透明底或自动后处理能力。
 
@@ -103,7 +127,8 @@ uv run pytest -q -c pyproject.toml
 ```
 
 测试禁止真实 HTTP，使用模型、ComfyUI 和 QQ 的替身。离线通过不等于服务器加载、
-真实工具链、QQ 回执或画面质量验收。部署与实机测试需另行授权。
+真实工具链、QQ 回执或画面质量验收。本项目维护约定为验证通过后默认提交、推送并部署；
+发布 release 和触发真实生图仍需单独要求。
 
 ## License
 

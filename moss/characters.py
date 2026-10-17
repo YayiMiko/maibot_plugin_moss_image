@@ -38,6 +38,9 @@ class CharacterResolver:
                     "copyright": character.get("copyright", ""),
                     "status": "unresolved",
                 }
+                if not character["candidates"]:
+                    answers.append(base)
+                    continue
                 best, evidence = self.module._resolve_evidence_candidates(
                     tuple(character["candidates"][:3]),
                     donmai_base_urls=self.module.DEFAULT_DONMAI_BASE_URLS,
@@ -128,7 +131,11 @@ class CharacterResolver:
                 "MOSS character lookup unavailable: %s", type(exc).__name__
             )
             return [
-                {"source_name": c["source_name"], "status": "source_unavailable"}
+                {
+                    "source_name": c["source_name"],
+                    "copyright": c.get("copyright", ""),
+                    "status": "source_unavailable",
+                }
                 for c in characters
             ]
         finally:

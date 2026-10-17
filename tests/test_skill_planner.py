@@ -83,16 +83,11 @@ def test_json_errors_do_not_silently_drop_data(text):
         skill.compile(skill.parse(text), 1024, 1024)
 
 
-def test_caption_and_literal_raw_prompt():
+def test_caption_keeps_literal_wording_and_cannot_replace_layout():
     skill = OfficialSkill()
     caption = 'A sign reads "こんにちは！".\nA second line reads "你好".'
     assert skill.compile({"caption": caption}, 1024, 1024) == caption
-    raw = skill.compile(layout(), 1024, 1024)
-    skill.validate_raw(raw, 1024, 1024)
-    with pytest.raises(ValueError):
-        skill.validate_raw(raw, 512, 512)
-    with pytest.raises(ValueError):
-        skill.validate_raw('{"caption":"not a compiled layout"}', 1024, 1024)
+    assert not hasattr(skill, "validate_raw")
     with pytest.raises(ValueError):
         skill.compile({"caption": "a"}, 1024, 1024, layout=True)
 
@@ -105,7 +100,7 @@ def make_planner(responses):
     return Planner(ctx, OfficialSkill(), resolver), ctx, resolver
 
 
-def test_auto_caption_uses_full_skill_without_history():
+def test_caption_uses_full_skill_without_layout_reference_or_history():
     planner, ctx, _ = make_planner(
         [{"success": True, "response": '{"caption":"A red cup."}'}]
     )
@@ -115,7 +110,7 @@ def test_auto_caption_uses_full_skill_without_history():
     messages = ctx.llm.generate.call_args.args[0]
     assert len(messages) == 2 and messages[0]["role"] == "system"
     assert planner.skill.instructions in messages[0]["content"]
-    assert planner.skill.layout_instructions in messages[0]["content"]
+    assert planner.skill.layout_instructions not in messages[0]["content"]
     assert ctx.llm.generate.call_args.kwargs["task_name"] == "utils"
     assert "history" not in ctx.llm.generate.call_args.kwargs
 
@@ -181,11 +176,11 @@ def test_future_intents_are_reserved_without_calls(intent):
     resolver.resolve.assert_not_awaited()
 
 
-def test_raw_skips_all_llm_and_identity_lookup():
+def test_removed_raw_mode_never_calls_services():
     planner, ctx, resolver = make_planner([])
     raw = "  Original wording, no default artists.\nSecond paragraph.  "
-    plan = asyncio.run(planner.plan(ImageRequest(raw, 1024, 1024, "raw"), Planning()))
-    assert plan.prompt == raw
+    with pytest.raises(PlanningError, match="unsupported_mode"):
+        asyncio.run(planner.plan(ImageRequest(raw, 1024, 1024, "raw"), Planning()))
     ctx.llm.generate.assert_not_awaited()
     resolver.resolve.assert_not_awaited()
 
@@ -233,7 +228,12 @@ def test_identity_evidence_is_bound_per_explicit_character():
     candidates = resolver.resolve.call_args.args[0]
     assert [c["source_name"] for c in candidates] == ["荧", "纳西妲"]
     payload = json.loads(ctx.llm.generate.call_args.args[0][1]["content"])
-    assert payload["character_evidence"] == resolver.resolve.return_value
+    assert [c["canonical_tag"] for c in payload["character_evidence"]] == [
+        c["canonical_tag"] for c in resolver.resolve.return_value
+    ]
+    assert all(
+        c["copyright"] == "Genshin Impact" for c in payload["character_evidence"]
+    )
     assert plan.prompt.endswith("raincoats.")
     assert "lumine_" not in plan.prompt
 
@@ -264,3 +264,162 @@ def test_danbooru_adapter_uses_character_evidence_not_tag_replacement(monkeypatc
     assert [r["source_name"] for r in result] == ["荧", "纳西妲"]
     assert all(r["status"] == "verified" for r in result)
     assert result[0]["appearance_anchors"] == ["blonde_hair"]
+
+
+@pytest.mark.parametrize("mode", ["caption", "generate"])
+def test_caption_routes_repair_accidental_layout_once(mode):
+    planner, ctx, _ = make_planner(
+        [
+            {"success": True, "response": json.dumps(layout())},
+            {"success": True, "response": '{"caption":"A quiet church."}'},
+        ]
+    )
+    plan = asyncio.run(
+        planner.plan(
+            ImageRequest("church", 1024, 1024, mode), Planning(danbooru_enabled=False)
+        )
+    )
+    assert plan.mode == mode and plan.compiled_prompt == "A quiet church."
+    assert ctx.llm.generate.await_count == 2
+
+
+def test_generate_expands_original_once_with_frozen_context_and_separate_body():
+    caption = 'An adult traveler in a raincoat, smiling beside a sign reading "你好！".\nFine raindrops catch the light.'
+    planner, ctx, _ = make_planner(
+        [{"success": True, "response": json.dumps({"caption": caption})}]
+    )
+    request = ImageRequest(
+        "成年旅人穿雨衣站在车站，牌子写“你好！”",
+        880,
+        1184,
+        "generate",
+        positive_prefix="best quality, highres,",
+        style_name="测试",
+        style_prompt="@artist name, 简洁平涂，",
+    )
+    plan = asyncio.run(planner.plan(request, Planning(danbooru_enabled=False)))
+    assert plan.compiled_prompt == caption
+    assert plan.prompt == "best quality, highres, @artist name, 简洁平涂, " + caption
+    assert (
+        plan.prompt.count("best quality") == 1
+        and plan.prompt.count("@artist name") == 1
+    )
+    assert plan.draft == {"caption": caption}
+    assert plan.prefixes["oc_context"] is None
+    assert ctx.llm.generate.await_count == 1
+    messages = ctx.llm.generate.call_args.args[0]
+    payload = json.loads(messages[1]["content"])
+    assert payload["request"] == request.prompt
+    assert payload["locked_prefixes"]["style_prompt"] == request.style_prompt
+    assert planner.skill.instructions in messages[0]["content"]
+    assert "simple white-background" in messages[0]["content"]
+
+
+@pytest.mark.parametrize("mode", ["caption", "layout"])
+def test_pure_skill_routes_ignore_generate_prefix_and_style(mode):
+    draft = {"caption": "A red cup."} if mode == "caption" else layout()
+    planner, ctx, _ = make_planner([{"success": True, "response": json.dumps(draft)}])
+    request = ImageRequest(
+        "a cup",
+        1024,
+        1024,
+        mode,
+        positive_prefix="DO NOT ADD",
+        style_name="PRIVATE",
+        style_prompt="DO NOT ADD STYLE",
+    )
+    plan = asyncio.run(planner.plan(request, Planning(danbooru_enabled=False)))
+    assert plan.prompt == plan.compiled_prompt and plan.prefixes == {}
+    assert "DO NOT ADD" not in plan.prompt
+    payload = json.loads(ctx.llm.generate.call_args.args[0][1]["content"])
+    assert "locked_prefixes" not in payload
+
+
+@pytest.mark.parametrize(
+    "candidates,expected",
+    [
+        ([" Cartethyia_(Wuthering Waves) "], ["cartethyia_(wuthering_waves)"]),
+        (["ＬＵＭＩＮＥ_(GENSHIN_IMPACT)"], ["lumine_(genshin_impact)"]),
+        (["bad/tag", ""], []),
+        (None, []),
+    ],
+)
+def test_candidate_normalization_never_discards_original_identity(candidates, expected):
+    extraction = {
+        "characters": [
+            {"source_name": "荧", "copyright": "原神", "candidates": candidates}
+        ]
+    }
+    planner, ctx, resolver = make_planner(
+        [
+            {"success": True, "response": json.dumps(extraction)},
+            {"success": True, "response": '{"caption":"Lumine, wearing a raincoat."}'},
+        ]
+    )
+    plan = asyncio.run(
+        planner.plan(ImageRequest("荧穿雨衣", 1024, 1024, "generate"), Planning())
+    )
+    assert resolver.resolve.call_args.args[0][0]["candidates"] == expected
+    assert plan.characters[0]["source_name"] == "荧"
+    assert plan.characters[0]["copyright"] == "原神"
+    assert plan.prefixes["identity_tags"] == ["荧"]
+    assert plan.prompt.startswith("荧, ")
+    assert (
+        json.loads(ctx.llm.generate.call_args.args[0][1]["content"])[
+            "character_evidence"
+        ][0]["source_name"]
+        == "荧"
+    )
+
+
+def test_generate_uses_only_verified_identity_as_a_canonical_prefix():
+    planner, _, resolver = make_planner(
+        [
+            {
+                "success": True,
+                "response": '{"characters":[{"source_name":"荧","candidates":["Lumine_(Genshin_Impact)"]}]}',
+            },
+            {"success": True, "response": '{"caption":"Lumine wears a raincoat."}'},
+        ]
+    )
+    resolver.resolve.return_value = [
+        {
+            "source_name": "荧",
+            "status": "verified",
+            "canonical_tag": "lumine_(genshin_impact)",
+        }
+    ]
+    plan = asyncio.run(
+        planner.plan(ImageRequest("荧穿雨衣", 1024, 1024, "generate"), Planning())
+    )
+    assert plan.prompt.startswith("lumine_(genshin_impact), ")
+
+
+def test_empty_candidates_do_not_call_danbooru_but_retain_source(monkeypatch):
+    resolver = CharacterResolver(logging.getLogger("empty-candidates"))
+    monkeypatch.setattr(
+        resolver.module,
+        "_resolve_evidence_candidates",
+        lambda *a, **kw: pytest.fail("Empty hints must not query the network"),
+    )
+    result = asyncio.run(
+        resolver.resolve(
+            [{"source_name": "荧", "copyright": "原神", "candidates": []}], 1
+        )
+    )
+    assert result == [
+        {"source_name": "荧", "copyright": "原神", "status": "unresolved"}
+    ]
+
+
+def test_oc_interface_is_reserved_without_calls():
+    planner, ctx, resolver = make_planner([])
+    with pytest.raises(PlanningError, match="reserved_oc_context"):
+        asyncio.run(
+            planner.plan(
+                ImageRequest("a person", 1024, 1024, oc_context={"name": "future"}),
+                Planning(),
+            )
+        )
+    ctx.llm.generate.assert_not_awaited()
+    resolver.resolve.assert_not_awaited()

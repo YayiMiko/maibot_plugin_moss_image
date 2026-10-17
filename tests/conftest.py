@@ -75,7 +75,7 @@ def command():
         "stream_id": "stream",
         "group_id": "group",
         "user_id": "user",
-        "text": "/moss 白猫睡在窗边",
+        "text": "/moss 规划 白猫睡在窗边",
         "message": {"message_id": "message"},
     }
 

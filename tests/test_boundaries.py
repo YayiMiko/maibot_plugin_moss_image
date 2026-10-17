@@ -129,14 +129,20 @@ def test_config_snapshot_and_two_conversations_are_isolated(
     async def run():
         await plugin.on_load()
         first = copy.deepcopy(command)
-        first["text"] = "/moss 无优化 FIRST --尺寸 1024x1024"
+        first["text"] = "/moss 规划 FIRST --尺寸 1024x1024"
+        plugin.ctx.llm.generate.side_effect = lambda messages, **kw: {
+            "success": True,
+            "response": json.dumps(
+                {"caption": json.loads(messages[1]["content"])["request"]}
+            ),
+        }
         await plugin.handle_moss(**first)
         plugin.config.rendering.negative_prompt = "NEW NEGATIVE"
         second = copy.deepcopy(first)
         second.update(
             stream_id="another-stream",
             user_id="another-user",
-            text="/moss 无优化 SECOND --比例 16:9",
+            text="/moss 规划 SECOND --比例 16:9",
         )
         await plugin.handle_moss(**second)
         await asyncio.gather(*list(plugin.jobs.values()))
@@ -168,10 +174,10 @@ def test_config_snapshot_and_two_conversations_are_isolated(
 def test_leading_bot_mention_requires_real_components(plugin, command, comfy_transport):
     async def run():
         await plugin.on_load()
-        command["text"] = "@renamed-bot /moss 无优化 cup"
+        command["text"] = "@renamed-bot /moss 规划 cup"
         command["message"]["raw_message"] = [
             {"type": "at", "data": {"target_user_id": "bot"}},
-            {"type": "text", "data": "/moss 无优化 cup"},
+            {"type": "text", "data": "/moss 规划 cup"},
         ]
         assert await plugin.handle_moss(**command) == (True, None, 2)
         await asyncio.gather(*list(plugin.jobs.values()))
@@ -291,6 +297,30 @@ def test_retention_only_deletes_expired_terminal_owned_data(
     assert removed == int(expected)
     assert path.exists() != expected and directory.exists() != expected
     assert unrelated.read_text(encoding="utf-8") == "keep"
+
+
+def test_required_sdk_lifecycle_callbacks_are_explicit():
+    from maibot_sdk import MaiBotPlugin
+
+    from plugin import MossPlugin
+
+    for name in ("on_load", "on_unload", "on_config_update"):
+        assert getattr(MossPlugin, name) is not getattr(MaiBotPlugin, name)
+
+
+def test_config_update_does_not_restart_tasks_or_call_services(plugin):
+    async def run():
+        await plugin.on_load()
+        runner, store, jobs = plugin.runner, plugin.store, plugin.jobs
+        await plugin.on_config_update("plugin", {"planning": {}}, "updated")
+        assert plugin.runner is runner and plugin.store is store
+        assert plugin.jobs is jobs
+        plugin.ctx.llm.generate.assert_not_awaited()
+        plugin.ctx.send.image.assert_not_awaited()
+        plugin.ctx.send.text.assert_not_awaited()
+        await plugin.on_unload()
+
+    asyncio.run(run())
 
 
 def test_manifest_ci_and_skill_integrity_agree():

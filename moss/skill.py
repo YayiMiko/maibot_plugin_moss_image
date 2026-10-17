@@ -1,6 +1,5 @@
 """Pinned official skill and compiler, without machine-local Codex paths."""
 
-import copy
 import hashlib
 import importlib.util
 import json
@@ -57,53 +56,3 @@ class OfficialSkill:
         elif layout:
             raise ValueError("Explicit layout mode requires a Layout draft")
         return self.compiler.compile_prompt(draft)
-
-    def validate_raw(self, text: str, width: int, height: int) -> None:
-        """Validate model-facing Layout without rewriting a literal raw prompt.
-
-        Args:
-            text: Literal natural language or compiled Layout JSON.
-            width: Actual generation width.
-            height: Actual generation height.
-
-        Raises:
-            ValueError: JSON is not a valid compiled Layout for this canvas.
-        """
-        if not text.lstrip().startswith(("{", "[")):
-            return
-        original = self.parse(text)
-        if not isinstance(original, dict) or set(original) != {
-            "summary",
-            "items",
-            "bbox_coord_space",
-            "bbox_format",
-        }:
-            raise ValueError("Raw JSON must be a compiled MOSS Layout")
-        if (
-            original["bbox_coord_space"] != "abs_centralized"
-            or original["bbox_format"] != "yxyx"
-        ):
-            raise ValueError("Raw Layout requires abs_centralized/yxyx boxes")
-        draft = copy.deepcopy(original)
-        if not isinstance(draft["items"], list):
-            raise ValueError("Layout items must be a list")
-        for item in draft["items"]:
-            box = item.get("bbox") if isinstance(item, dict) else None
-            if (
-                not isinstance(box, list)
-                or len(box) != 4
-                or any(type(n) is not int for n in box)
-            ):
-                raise ValueError("Compiled Layout boxes must be four integers")
-            y1, x1, y2, x2 = box
-            item["bbox"] = [
-                x1 + width // 2,
-                y1 + height // 2,
-                x2 + width // 2,
-                y2 + height // 2,
-            ]
-        draft.update(
-            width=width, height=height, bbox_coord_space="abs", bbox_format="xyxy"
-        )
-        if self.parse(self.compile(draft, width, height, layout=True)) != original:
-            raise ValueError("Invalid compiled Layout")

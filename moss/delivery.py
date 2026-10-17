@@ -65,7 +65,12 @@ async def send_result(
                 }
                 for i in range(0, len(text), 2000)
             ]
-            options.update(show_log=False, processed_plain_text="[MOSS 法术解析结果]")
+            options.update(
+                show_log=False,
+                processed_plain_text="[MOSS 风格菜单]"
+                if record.get("action") == "style"
+                else "[MOSS 法术解析结果]",
+            )
             method, mode = ctx.send.forward, "forward"
         else:
             method, payload, mode = ctx.send.text, text, "text"

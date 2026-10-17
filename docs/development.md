@@ -4,13 +4,16 @@ This is an independent MaiBot plugin, not AstrBot core or the Anima plugin.
 Use public MaiBot SDK APIs only. Never modify sibling projects, host persona,
 account permissions, local ComfyUI workflows or live service configuration.
 
-Keep exactly four public command routes: generate, layout, raw and metadata.
-Do not add status, debug, role/style libraries, task recovery, image editing,
-comic or meme commands. Comic and meme intents are reserved internal interfaces.
+Keep explicit generate, caption, layout, style and metadata command routes.
+Show style selection and editing only in the style submenu. Raw prompting is
+removed. Do not add status, debug, character libraries, task recovery, image
+editing, comic or meme commands. OC, comic and meme interfaces remain reserved.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru
-tag lists. Character lookup must not rewrite compiled prompts or inject defaults.
+tag lists. Generate mode wraps the official Caption with frozen configured
+prefixes and styles; Caption and Layout modes remain unwrapped. Never clean
+Caption prose as a comma-separated tag list or invent an extra artist library.
 
 Keep tasks, configuration, destinations and outputs request-local. Never read a
 global latest image, cross-conversation quote or unrestricted local path.
@@ -20,6 +23,10 @@ Do not follow symlinks or junctions in owned storage cleanup.
 
 Verification is offline by default: block HTTP, mock LLM/ComfyUI/QQ calls and
 do not deploy, restart services or generate real images without authorization.
+The owner authorizes committing, pushing and deploying validated changes by
+default. Recheck live task state and preserve runtime configuration and data;
+restart only MaiBot when needed, never NapCat. New releases and real image
+generation still require separate requests. Do not deploy failed checks.
 Use an existing isolated Python environment or this project's environment;
 do not resolve the unrelated parent AstrBot checkout's conflicts.
 

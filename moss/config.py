@@ -1,9 +1,11 @@
-"""Small, effective configuration surface for the four public routes."""
+"""Effective model, sampling and style configuration for explicit commands."""
 
 from urllib.parse import urlparse
 
 from maibot_sdk import Field, PluginConfigBase
 from pydantic import field_validator, model_validator
+
+from .styles import parse_style_definition
 
 
 class PluginMetadata(PluginConfigBase):
@@ -110,6 +112,34 @@ class Rendering(PluginConfigBase):
         return self
 
 
+class Styles(PluginConfigBase):
+    __ui_label__ = "正面前缀与画风"
+    positive_prefix: str = Field(
+        default="best quality, highres,",
+        max_length=4096,
+        description="仅用于 /moss 生成；在官方 Caption 编译后由程序拼接。留空不添加。",
+    )
+    presets: list[str] = Field(
+        default_factory=lambda: [
+            "千代风格=@yuasa akira, @tomose shunsaku, @kithera, @enuzoushigaya, 简洁干净的二次元平涂画风，"
+        ],
+        max_length=64,
+        description="名称=完整风格内容；不做画师格式转换。聊天编辑会覆盖同名项。人数由用户要求和正文决定。",
+    )
+    default_style: str = Field(default="千代风格", max_length=80)
+
+    @model_validator(mode="after")
+    def valid_library(self):
+        """Reject ambiguous duplicate names and missing configured defaults."""
+        entries = [parse_style_definition(item) for item in self.presets]
+        names = [name for name, _ in entries]
+        if len(names) != len(set(names)):
+            raise ValueError("Duplicate style preset names")
+        if self.default_style and self.default_style not in names:
+            raise ValueError("Default style must name a configured preset")
+        return self
+
+
 class Delivery(PluginConfigBase):
     __ui_label__ = "发送"
     timeout_seconds: int = Field(
@@ -125,5 +155,6 @@ class MossConfig(PluginConfigBase):
     plugin: PluginMetadata = Field(default_factory=PluginMetadata)
     connection: Connection = Field(default_factory=Connection)
     planning: Planning = Field(default_factory=Planning)
+    styles: Styles = Field(default_factory=Styles)
     rendering: Rendering = Field(default_factory=Rendering)
     delivery: Delivery = Field(default_factory=Delivery)

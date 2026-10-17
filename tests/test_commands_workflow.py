@@ -1,4 +1,4 @@
-"""Only four routes, explicit canvases and native workflow invariants."""
+"""Explicit routes, hidden style operations and native workflow invariants."""
 
 import json
 
@@ -24,6 +24,7 @@ from moss.workflow import build_workflow
         "调试",
         "漫画",
         "表情包",
+        "无优化",
     ],
 )
 def test_removed_routes_cannot_accidentally_generate(word):
@@ -34,9 +35,10 @@ def test_removed_routes_cannot_accidentally_generate(word):
 @pytest.mark.parametrize(
     "text,action,mode",
     [
-        ("/moss cup", "generate", "auto"),
+        ("/moss 生成 cup", "generate", "generate"),
+        ("/moss 规划 cup", "generate", "caption"),
         ("/moss 布局 poster", "generate", "layout"),
-        ("/moss 无优化 literal prompt", "generate", "raw"),
+        ("/moss 风格", "style", None),
         ("[image] /moss 解析法术", "metadata", None),
         ("/moss", "help", None),
     ],
@@ -44,14 +46,14 @@ def test_removed_routes_cannot_accidentally_generate(word):
 def test_only_supported_routes(text, action, mode):
     result, request = parse_command(text, MossConfig().rendering)
     assert result == action
-    if request:
+    if action == "generate":
         assert request.mode == mode
 
 
 def test_default_canvas_matches_native_resolution_selector():
-    _, request = parse_command("/moss cup", MossConfig().rendering)
+    _, request = parse_command("/moss 生成 cup", MossConfig().rendering)
     assert (request.width, request.height) == (880, 1184)
-    _, square = parse_command("/moss cup --比例 1:1", MossConfig().rendering)
+    _, square = parse_command("/moss 生成 cup --比例 1:1", MossConfig().rendering)
     assert square.width == square.height == 1024
 
 
@@ -69,17 +71,16 @@ def test_default_canvas_matches_native_resolution_selector():
 )
 def test_invalid_explicit_dimensions_never_silently_change(suffix):
     with pytest.raises(ValueError):
-        parse_command("/moss cup " + suffix, MossConfig().rendering)
+        parse_command("/moss 生成 cup " + suffix, MossConfig().rendering)
 
 
-def test_flags_do_not_rewrite_literal_visible_text_or_raw_json():
-    _, request = parse_command("/moss 写着“--尺寸 1024x1024”", MossConfig().rendering)
-    assert request.prompt == "写着“--尺寸 1024x1024”" and request.width == 880
-    raw = '{"summary":{"caption":" --尺寸 1024x1024 "},"items":[]}'
+def test_flags_do_not_rewrite_literal_visible_text():
     _, request = parse_command(
-        "/moss 无优化 --尺寸 1024x1024 " + raw, MossConfig().rendering
+        "/moss 规划 写着“--尺寸 1024x1024”", MossConfig().rendering
     )
-    assert request.prompt == raw and request.width == 1024
+    assert request.prompt == "写着“--尺寸 1024x1024”" and request.width == 880
+    with pytest.raises(ValueError):
+        parse_command("/moss cup", MossConfig().rendering)
 
 
 def test_workflow_uses_explicit_bindings_and_moss_sampling():

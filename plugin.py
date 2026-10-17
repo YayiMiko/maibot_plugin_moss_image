@@ -1,9 +1,10 @@
-"""MaiBot SDK entry point for four explicit MOSS command routes."""
+"""MaiBot SDK entry point for explicit MOSS image and style commands."""
 
 import asyncio
 import hashlib
 import json
 import re
+from dataclasses import replace
 
 from maibot_sdk import Command, MaiBotPlugin
 
@@ -14,6 +15,7 @@ if __package__:
     from .moss.planner import Planner
     from .moss.skill import OfficialSkill
     from .moss.storage import TaskStore
+    from .moss.styles import StyleStore
     from .moss.tasks import TaskRunner
 else:
     from moss.characters import CharacterResolver
@@ -22,6 +24,7 @@ else:
     from moss.planner import Planner
     from moss.skill import OfficialSkill
     from moss.storage import TaskStore
+    from moss.styles import StyleStore
     from moss.tasks import TaskRunner
 
 
@@ -39,9 +42,11 @@ class MossPlugin(MaiBotPlugin):
             self.ctx.paths.data_dir, self.ctx.paths.runtime_dir, self.ctx.logger
         )
         await self.store.initialize()
+        self.styles = StyleStore(self.store.data)
+        await self.styles.initialize()
         resolver = CharacterResolver(self.ctx.logger)
         self.runner = TaskRunner(
-            self.ctx, self.store, Planner(self.ctx, skill, resolver)
+            self.ctx, self.store, Planner(self.ctx, skill, resolver), self.styles
         )
         self.maintenance = asyncio.create_task(self._maintain())
 
@@ -64,9 +69,23 @@ class MossPlugin(MaiBotPlugin):
         if iterator is not None:
             iterator.close()
 
+    async def on_config_update(
+        self, scope: str, config_data: dict, version: str
+    ) -> None:
+        """Accept host configuration reloads without replacing active task snapshots.
+
+        Args:
+            scope: Configuration reload scope provided by the host.
+            config_data: Updated payload already applied by the SDK.
+            version: Host configuration reload version.
+        """
+        self.ctx.logger.info(
+            "MOSS configuration updated: scope=%s version=%s", scope, version
+        )
+
     @Command(
         "moss",
-        description="MOSS 绘图、布局、原样提示词与法术解析",
+        description="MOSS 生成、Caption 规划、布局、风格与法术解析",
         pattern=COMMAND_PATTERN,
     )
     async def handle_moss(self, **kwargs):
@@ -150,6 +169,7 @@ class MossPlugin(MaiBotPlugin):
         scope = hashlib.sha256(json.dumps(["qq", stream, user]).encode()).hexdigest()
         task_id = hashlib.sha256(f"{scope}:{message_id}".encode()).hexdigest()[:24]
         context = {
+            "scope": scope,
             "stream_id": stream,
             "user_id": user,
             "group_id": str(kwargs.get("group_id") or ""),
@@ -160,6 +180,16 @@ class MossPlugin(MaiBotPlugin):
             if len(self.jobs) >= config.connection.max_pending:
                 await self.runner.notice("MOSS 队列已满，请稍后再试。", stream)
                 return True, None, 2
+            if action == "generate" and request.mode == "generate":
+                style_name, style_prompt = await self.styles.snapshot(
+                    scope, config.styles
+                )
+                request = replace(
+                    request,
+                    positive_prefix=config.styles.positive_prefix,
+                    style_name=style_name,
+                    style_prompt=style_prompt,
+                )
             record = await self.store.create(task_id, scope, action)
             if record is None:
                 return True, None, 2

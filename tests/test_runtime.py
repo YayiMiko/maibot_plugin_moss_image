@@ -81,7 +81,9 @@ def test_image_requires_platform_receipt_without_resend(
     asyncio.run(run())
 
 
-def test_raw_with_bad_attached_image_never_reads_it(plugin, command, comfy_transport):
+def test_removed_raw_with_bad_attachment_never_calls_services(
+    plugin, command, comfy_transport
+):
     command["text"] = "[image] /moss 无优化 A cup."
     command["message"]["reply_to"] = "expired-image"
     plugin.ctx.api.call.side_effect = AssertionError(
@@ -94,14 +96,9 @@ def test_raw_with_bad_attached_image_never_reads_it(plugin, command, comfy_trans
         await asyncio.gather(*list(plugin.jobs.values()))
         plugin.ctx.llm.generate.assert_not_awaited()
         plugin.ctx.api.call.assert_not_awaited()
-        payload = json.loads(
-            next(r.content for r in comfy_transport if r.url.path == "/prompt")
-        )
-        assert payload["prompt"]["4"]["inputs"]["text"] == "A cup."
-        diagnostic = json.loads(
-            (plugin.store.data / "last_llm_response.json").read_text(encoding="utf-8")
-        )
-        assert diagnostic["calls"] == []
+        assert not comfy_transport
+        assert not list(plugin.store.records.glob("*.json"))
+        assert "已移除" in plugin.ctx.send.text.call_args.args[0]
         await plugin.on_unload()
 
     asyncio.run(run())
@@ -200,12 +197,12 @@ def test_platform_permissions_help_and_removed_commands(plugin, command):
             assert await plugin.handle_moss(**command) == (False, None, 0)
         command["text"] = "/moss 状态"
         await plugin.handle_moss(**command)
-        assert "首版不提供" in plugin.ctx.send.text.call_args.args[0]
+        assert "未开放" in plugin.ctx.send.text.call_args.args[0]
         command["text"] = "/moss"
         await plugin.handle_moss(**command)
         help_text = plugin.ctx.send.text.call_args.args[0]
         assert "/moss 布局" in help_text and "查看角色" not in help_text
-        command["text"] = "/moss cup"
+        command["text"] = "/moss 规划 cup"
         plugin.config.connection.allowed_sender_ids = ["other-user"]
         await plugin.handle_moss(**command)
         assert not plugin.jobs
@@ -322,7 +319,7 @@ def test_long_group_metadata_uses_one_forward_card(plugin):
     asyncio.run(run())
 
 
-def test_latest_llm_ignores_late_old_task_and_raw_clears_it(plugin):
+def test_latest_llm_ignores_late_old_task_and_new_task_clears_it(plugin):
     async def run():
         await plugin.on_load()
         first = await plugin.store.create("a" * 24, "a-scope", "generate")
@@ -346,3 +343,35 @@ def test_atomic_storage_replaces_without_leftover_temp(tmp_path):
     atomic_write(path, {"text": "再见"})
     assert json.loads(path.read_text(encoding="utf-8")) == {"text": "再见"}
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_generate_saves_official_body_prefixes_and_exact_submitted_prompt(
+    plugin, command, comfy_transport
+):
+    command["text"] = "/moss 生成 白猫睡在窗边"
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        frozen_prefix = plugin.config.styles.positive_prefix
+        plugin.config.styles.positive_prefix = "LATER PREFIX"
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        directory = plugin.store.runtime / record["task_id"]
+        prompt = (directory / "prompt.txt").read_text(encoding="utf-8")
+        body = (directory / "compiled_prompt.txt").read_text(encoding="utf-8")
+        prefixes = json.loads((directory / "prefixes.json").read_text(encoding="utf-8"))
+        graph = json.loads(
+            next(r.content for r in comfy_transport if r.url.path == "/prompt")
+        )["prompt"]
+        assert prompt == graph["4"]["inputs"]["text"]
+        assert prompt.startswith(frozen_prefix) and "LATER PREFIX" not in prompt
+        assert body == "A white cat sleeping on a windowsill."
+        assert prompt.endswith(body) and prefixes["style_name"] == "千代风格"
+        assert prefixes["positive_prefix"] == frozen_prefix
+        assert record["mode"] == "generate" and record["status"] == "sent"
+        await plugin.on_unload()
+
+    asyncio.run(run())

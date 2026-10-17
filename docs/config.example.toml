@@ -19,6 +19,11 @@ timeout = 180
 danbooru_enabled = true
 danbooru_budget = 8
 
+[styles]
+positive_prefix = "best quality, highres,"
+presets = ["千代风格=@yuasa akira, @tomose shunsaku, @kithera, @enuzoushigaya, 简洁干净的二次元平涂画风，"]
+default_style = "千代风格"
+
 [rendering]
 unet_name = "moss_image_sft_int8_convrot.safetensors"
 clip_name = "qwen3.5_9b_int8_convrot.safetensors"

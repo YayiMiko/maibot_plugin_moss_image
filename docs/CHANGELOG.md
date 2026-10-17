@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Replace implicit generation and raw prompting with explicit generate, forced Caption and Layout routes.
+- Freeze configurable quality prefixes, verified identities and styles before one official Caption expansion; assemble them after compilation without cleaning the prose as tags.
+- Add a style submenu with selection, creation and editing, private persistence and independently scoped user/conversation selections.
+- Normalize mixed-case candidate tags and retain original character names even when candidate validation or lookup fails.
+- Reserve an empty OC context without exposing character management.
+- Keep the mandatory host configuration callback and test all SDK lifecycle overrides.
+- Retain the official skill, compiler, workflow models and uncertain-delivery safeguards unchanged.
+- Withdraw the GitHub releases and tags for v0.1.0 and v0.1.1; preserve commit history and local installation archives.
+
 ## v0.1.1 — 2026-10-17
 
 - Move the configuration example, development instructions and changelog into `docs/`.

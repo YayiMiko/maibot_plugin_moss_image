@@ -3,6 +3,7 @@
 import asyncio
 import secrets
 import time
+from dataclasses import asdict
 
 from .comfy import ComfyClient
 from .delivery import send_result
@@ -15,8 +16,9 @@ from .workflow import build_workflow
 class TaskRunner:
     """Separate planning from serial GPU submission and at-most-once delivery."""
 
-    def __init__(self, ctx, store, planner):
+    def __init__(self, ctx, store, planner, styles):
         self.ctx, self.store, self.planner = ctx, store, planner
+        self.styles = styles
         self.gpu_lock = asyncio.Lock()
 
     async def run(self, record: dict, action: str, request, config, context: dict):
@@ -24,7 +26,7 @@ class TaskRunner:
 
         Args:
             record: Private identity and mutable state owned by this coroutine.
-            action: Generation or explicit metadata extraction.
+            action: Generation, local style management or metadata extraction.
             request: Fixed-canvas image intent, absent for metadata extraction.
             config: Detached configuration accepted with the original command.
             context: Authorized stream, sender and explicit message/quote IDs.
@@ -32,17 +34,25 @@ class TaskRunner:
         directory = self.store.runtime / record["task_id"]
         started = time.monotonic()
         try:
-            await self.store.begin_llm(record)
-            if action == "metadata":
-                record["status"] = "reading_image"
-                await self.store.save(record)
-                content = await asyncio.wait_for(
-                    MetadataReader(self.ctx, config.connection.qq_cache_roots).resolve(
-                        context
-                    ),
-                    timeout=90,
-                )
-                parts = await asyncio.to_thread(extract_metadata, content)
+            if action != "style":
+                await self.store.begin_llm(record)
+            if action in {"metadata", "style"}:
+                if action == "style":
+                    record["status"] = "editing_style"
+                    await self.store.save(record)
+                    parts = await self.styles.handle(
+                        request, context["scope"], record["task_id"], config.styles
+                    )
+                else:
+                    record["status"] = "reading_image"
+                    await self.store.save(record)
+                    content = await asyncio.wait_for(
+                        MetadataReader(
+                            self.ctx, config.connection.qq_cache_roots
+                        ).resolve(context),
+                        timeout=90,
+                    )
+                    parts = await asyncio.to_thread(extract_metadata, content)
                 confirmed = await send_result(
                     self.ctx,
                     context["stream_id"],
@@ -55,6 +65,12 @@ class TaskRunner:
             else:
                 record["status"] = "planning"
                 await self.store.save(record)
+                await asyncio.to_thread(
+                    atomic_write, directory / "request.json", asdict(request)
+                )
+                await asyncio.to_thread(
+                    atomic_write, directory / "config.json", config.model_dump()
+                )
 
                 async def capture(stage, response):
                     await self.store.append_llm(record["task_id"], stage, response)
@@ -74,6 +90,14 @@ class TaskRunner:
                 await asyncio.to_thread(
                     atomic_write, directory / "prompt.txt", plan.prompt
                 )
+                await asyncio.to_thread(
+                    atomic_write,
+                    directory / "compiled_prompt.txt",
+                    plan.compiled_prompt,
+                )
+                await asyncio.to_thread(
+                    atomic_write, directory / "prefixes.json", plan.prefixes
+                )
                 seed = secrets.randbelow(2**63)
                 graph = await asyncio.to_thread(
                     build_workflow,
@@ -85,9 +109,6 @@ class TaskRunner:
                 )
                 await asyncio.to_thread(
                     atomic_write, directory / "workflow.json", graph
-                )
-                await asyncio.to_thread(
-                    atomic_write, directory / "config.json", config.model_dump()
                 )
                 record.update(status="queued", seed=seed)
                 await self.store.save(record)

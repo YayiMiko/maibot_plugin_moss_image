@@ -5,8 +5,10 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from .styles import parse_style_definition
+
 COMMAND_PATTERN = r"(?i)^\s*(?:(?:\[image\]|@[^\r\n]+?)\s*)*(?P<command>/moss(?:\s|$))"
-HELP = "/moss <要求>\n/moss 布局 <要求>\n/moss 无优化 <提示词>\n/moss 解析法术（附图或引用图）\n单次画幅：--尺寸 1024x1024 或 --比例 3:4"
+HELP = "/moss 生成 <要求>\n/moss 规划 <要求>（全权 Caption）\n/moss 布局 <要求>\n/moss 风格\n/moss 解析法术（附图或引用图）\n单次画幅：--尺寸 1024x1024 或 --比例 3:4"
 REMOVED = {
     "描述",
     "状态",
@@ -23,6 +25,7 @@ REMOVED = {
     "表情包",
     "帮助",
     "help",
+    "无优化",
 }
 
 
@@ -33,11 +36,26 @@ class ImageRequest:
     prompt: str
     width: int
     height: int
-    mode: Literal["auto", "layout", "raw"] = "auto"
+    mode: Literal["generate", "caption", "layout"] = "caption"
     task_type: Literal["illustration", "comic_page", "meme"] = "illustration"
+    positive_prefix: str = ""
+    style_name: str = ""
+    style_prompt: str = ""
+    oc_context: dict | None = None
 
 
-def parse_command(text: str, rendering) -> tuple[str, ImageRequest | None]:
+@dataclass(frozen=True)
+class StyleRequest:
+    """A local preset operation, never an image-generation request."""
+
+    operation: Literal["list", "select", "edit", "create"]
+    name: str = ""
+    content: str = ""
+
+
+def parse_command(
+    text: str, rendering
+) -> tuple[str, ImageRequest | StyleRequest | None]:
     """Parse explicit modes and resolve dimensions before any LLM call.
 
     Args:
@@ -56,18 +74,35 @@ def parse_command(text: str, rendering) -> tuple[str, ImageRequest | None]:
     if not body:
         return "help", None
     keyword = body.split(maxsplit=1)[0]
+    if keyword == "风格":
+        arguments = body[len(keyword) :].strip()
+        if not arguments:
+            return "style", StyleRequest("list")
+        parts = arguments.split(maxsplit=1)
+        operation = parts[0]
+        value = parts[1] if len(parts) > 1 else ""
+        if operation in {"编辑", "新建"}:
+            name, content = parse_style_definition(value.strip())
+            return "style", StyleRequest(
+                "edit" if operation == "编辑" else "create", name, content
+            )
+        if arguments == "关闭":
+            raise ValueError("没有风格关闭指令，请使用 /moss 风格 查看已有风格。")
+        if "=" in arguments:
+            raise ValueError("修改风格请使用 /moss 风格 编辑 名称=完整内容。")
+        name, _ = parse_style_definition(arguments + "=selection")
+        return "style", StyleRequest("select", name)
     if keyword in REMOVED:
-        raise ValueError("首版不提供该指令，请使用 /moss 查看可用写法。")
+        raise ValueError("该指令已移除或未开放，请使用 /moss 查看可用写法。")
     if body == "解析法术":
         return "metadata", None
     if keyword == "解析法术":
         raise ValueError("解析法术不接受文字参数，请附图或引用图片。")
-    mode = "auto"
-    for word, selected in (("布局", "layout"), ("无优化", "raw")):
-        if keyword == word:
-            mode = selected
-            body = body[len(word) :].strip()
-            break
+    modes = {"生成": "generate", "规划": "caption", "布局": "layout"}
+    if keyword not in modes:
+        raise ValueError("请使用 /moss 生成 <要求> 或 /moss 规划 <要求>。")
+    mode = modes[keyword]
+    body = body[len(keyword) :].strip()
     # Mask literal text without changing offsets into the original input.
     masked = list(body)
     quote, escaped = "", False
@@ -80,9 +115,6 @@ def parse_command(text: str, rendering) -> tuple[str, ImageRequest | None]:
                 escaped = True
             elif character == quote:
                 quote = ""
-        elif mode == "raw" and character in "{[":
-            masked[index:] = [" "] * (len(body) - index)
-            break
         elif character in {'"', "“", "「", "『"}:
             quote = {'"': '"', "“": "”", "「": "」", "『": "』"}[character]
             masked[index] = " "
@@ -135,5 +167,5 @@ def parse_command(text: str, rendering) -> tuple[str, ImageRequest | None]:
     if match:
         body = (body[: match.start()] + body[match.end() :]).strip()
     if not body:
-        raise ValueError("请填写绘图要求或完整提示词。")
+        raise ValueError("请填写绘图要求。")
     return "generate", ImageRequest(body, width, height, mode)
