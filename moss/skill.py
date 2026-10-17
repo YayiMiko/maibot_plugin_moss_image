@@ -25,9 +25,39 @@ class OfficialSkill:
                 ):
                     raise ValueError("Pinned resource integrity check failed")
         skill_dir = ROOT / "vendor/moss_skill"
-        self.instructions = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-        self.layout_instructions = (skill_dir / "references/layout.md").read_text(
-            encoding="utf-8"
+        upstream = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        # Keep upstream files intact; a tool-less LLM is not a filesystem agent.
+        guidance = upstream[
+            upstream.index("## Choose the deliverable") : upstream.index(
+                "## Compile and deliver"
+            )
+        ]
+        guidance = guidance.replace(
+            'Write a UTF-8 JSON file containing exactly `{"caption":"..."}`.',
+            'Return a JSON object containing exactly `{"caption":"..."}`.',
+        ).replace(
+            "Read [references/layout.md](references/layout.md) before writing a Layout draft.",
+            "For Layout drafts, follow the reference supplied in this system message.",
+        )
+        self.instructions = (
+            "HOST JSON-ONLY PLANNER CONTRACT: You are a tool-less JSON planning endpoint, "
+            "not an interactive filesystem or shell agent. All necessary guidance is supplied "
+            "in this message. The host alone saves files, invokes the official compiler, "
+            "validates coordinates and submits images. Do not read or locate files, run "
+            "commands, request tools or simulate tool calls. Return only the JSON object "
+            "required by the current stage, starting with { and ending with }. No preamble, "
+            "Markdown fences, file links, executable code, tool-call markup or compiled "
+            "coordinates. For a private storyboard or export envelope, follow the stage "
+            "schema below; the official guidance describes image composition, not extra "
+            "output fields or operational steps.\n\n" + guidance.strip()
+        )
+        self.layout_instructions = (
+            (skill_dir / "references/layout.md")
+            .read_text(encoding="utf-8")
+            .replace(
+                "Recompile after every geometry or canvas edit.",
+                "The host recompiles after every geometry or canvas edit.",
+            )
         )
         spec = importlib.util.spec_from_file_location(
             "moss_official_compiler", skill_dir / "scripts/compile_prompt.py"
