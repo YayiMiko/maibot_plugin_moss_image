@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Resolve extracted original names through known alias hints and online exact/autocomplete metadata, rather than depending only on LLM romanization. Local aliases still require live character-category evidence; ambiguous or cross-work names are not selected by popularity.
+- Preserve per-task candidates, bounded HTTP traces and specific lookup reasons. Publish verified identities before optional appearance requests and retain request-local partial results when the lookup budget expires.
 - Preserve verified Danbooru identity bindings through comic/meme exports, validate per-panel/item references, and inject canonical tags in legal Caption/Layout descriptions rather than relying on LLM copying. Unverified identities remain unverified and OC names are never inferred.
 - Make media styles actual prefixes of Caption or `summary.caption`, relocating exact echoed styles without rewriting ordinary words, drawing preset text or changing standalone Caption/Layout routes.
 - Include boolean depiction in the identity JSON example, distinguish missing fields from exclusions with one bounded repair, and clarify adjacent name/expression boundaries. Direct generation continues to preserve the user's original description when optional research fails.

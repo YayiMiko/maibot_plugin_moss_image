@@ -61,13 +61,17 @@ def test_lookup_evidence_categories(monkeypatch, category, deprecated, expected)
     module = resolver.module
     monkeypatch.setattr(
         module,
-        "_resolve_evidence_candidates",
-        lambda *a, **kw: (
+        "_fetch_stable_identity_tags",
+        lambda *a, **kw: ("blonde_hair",),
+    )
+    monkeypatch.setattr(
+        resolver,
+        "_query_records",
+        lambda *a, **kw: [
             module.TagRecord(
                 "lumine_(genshin_impact)", category, 100, deprecated, "test"
             ),
-            ("test",),
-        ),
+        ],
     )
     monkeypatch.setattr(
         module, "_fetch_stable_identity_tags", lambda *a, **kw: ("blonde_hair",)
@@ -83,12 +87,11 @@ def test_lookup_rejects_popular_namesake_from_other_work(monkeypatch):
     resolver = CharacterResolver(logging.getLogger("lookup"))
     module = resolver.module
     monkeypatch.setattr(
-        module,
-        "_resolve_evidence_candidates",
-        lambda *a, **kw: (
+        resolver,
+        "_query_records",
+        lambda *a, **kw: [
             module.TagRecord("pandora_(unrelated_game)", 4, 999999),
-            ("wrong work",),
-        ),
+        ],
     )
     result = resolver._lookup(
         [{"source_name": "潘多拉", "candidates": ["pandora_(re:zero)"]}]
@@ -101,7 +104,7 @@ def test_lookup_budget_keeps_slot_until_blocking_work_really_finishes(monkeypatc
     resolver = CharacterResolver(logging.getLogger("lookup"))
     release = threading.Event()
 
-    def blocking(characters):
+    def blocking(characters, **kwargs):
         release.wait(timeout=2)
         return []
 

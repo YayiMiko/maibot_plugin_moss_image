@@ -266,7 +266,8 @@ class Planner:
                 evidence = (
                     await asyncio.wait_for(
                         self.resolver.resolve(characters, config.danbooru_budget),
-                        timeout=config.danbooru_budget,
+                        # Let the resolver return its request-local partial results.
+                        timeout=config.danbooru_budget + 0.1,
                     )
                     if characters
                     else []
@@ -275,15 +276,27 @@ class Planner:
                 evidence = await self.resolver.resolve(
                     characters, config.danbooru_budget
                 )
-        except Exception:
+        except Exception as exc:
             if not research_optional:
                 raise
-            evidence = []
+            evidence = [
+                {
+                    "source_name": character["source_name"],
+                    "status": "source_unavailable",
+                    "lookup_reason": "lookup_budget_exhausted"
+                    if isinstance(exc, TimeoutError)
+                    else "lookup_error",
+                    "error_type": type(exc).__name__,
+                }
+                for character in characters
+            ]
         if not isinstance(evidence, list):
             evidence = []
         evidence = [
             {
                 "status": "unresolved",
+                "lookup_reason": "resolver_no_result",
+                "candidates": character["candidates"],
                 **next(
                     (
                         item

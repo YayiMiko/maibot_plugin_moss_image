@@ -298,12 +298,9 @@ def test_danbooru_adapter_uses_character_evidence_not_tag_replacement(monkeypatc
     resolver = CharacterResolver(logging.getLogger("characters"))
     module = resolver.module
     monkeypatch.setattr(
-        module,
-        "_resolve_evidence_candidates",
-        lambda candidates, **kw: (
-            module.TagRecord(candidates[0], 4, 100, source="test"),
-            ("verified",),
-        ),
+        resolver,
+        "_query_records",
+        lambda query, *args: [module.TagRecord(query, 4, 100, source="test")],
     )
     monkeypatch.setattr(
         module, "_fetch_stable_identity_tags", lambda *a, **kw: ("blonde_hair",)
@@ -458,21 +455,26 @@ def test_generate_uses_verified_identity_as_a_binding_not_an_extra_subject():
     assert plan.prompt.endswith("\n荧穿雨衣")
 
 
-def test_empty_candidates_do_not_call_danbooru_but_retain_source(monkeypatch):
+def test_empty_candidates_use_original_name_autocomplete_without_guessing(monkeypatch):
     resolver = CharacterResolver(logging.getLogger("empty-candidates"))
     monkeypatch.setattr(
-        resolver.module,
-        "_resolve_evidence_candidates",
-        lambda *a, **kw: pytest.fail("Empty hints must not query the network"),
+        resolver,
+        "_query_records",
+        lambda query, autocomplete, *args: (
+            []
+            if query == "荧" and autocomplete
+            else pytest.fail("Only the original name may be searched")
+        ),
     )
     result = asyncio.run(
         resolver.resolve(
             [{"source_name": "荧", "copyright": "原神", "candidates": []}], 1
         )
     )
-    assert result == [
-        {"source_name": "荧", "copyright": "原神", "status": "unresolved"}
-    ]
+    assert result[0]["source_name"] == "荧" and result[0]["copyright"] == "原神"
+    assert result[0]["status"] == "unresolved"
+    assert result[0]["lookup_reason"] == "no_matching_character_tag"
+    assert result[0]["candidates"] == [] and "canonical_tag" not in result[0]
 
 
 def test_invalid_oc_context_is_rejected_without_calls():
