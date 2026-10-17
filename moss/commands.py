@@ -15,7 +15,7 @@ HELP = (
     "/moss 风格：查看、选择、新建或编辑风格\n"
     "/moss 解析法术：附图/引用，读取原始提示词\n"
     "/moss 反推：附图/引用单图，视觉推测提示词，非原词\n"
-    "生图画幅：--尺寸 1024x1024（宽×高像素）或 --比例 3:4"
+    "生图画幅：末尾写 比例4：3，或 --尺寸 1024x1024（宽×高像素）"
 )
 REMOVED = {
     "描述",
@@ -120,29 +120,49 @@ def parse_command(
     quote, escaped = "", False
     for index, character in enumerate(body):
         if quote:
-            masked[index] = " "
+            masked[index] = "\ufffc"
             if escaped:
                 escaped = False
-            elif character == "\\" and quote == '"':
+            elif character == "\\" and quote in {'"', "'"}:
                 escaped = True
             elif character == quote:
                 quote = ""
-        elif character in {'"', "“", "「", "『"}:
-            quote = {'"': '"', "“": "”", "「": "」", "『": "』"}[character]
-            masked[index] = " "
+        elif character in {'"', "“", "‘", "「", "『"} or (
+            character == "'"
+            and (index == 0 or not re.match(r"[a-zA-Z0-9]", body[index - 1]))
+            and "'" in body[index + 1 :]
+        ):
+            quote = {'"': '"', "'": "'", "“": "”", "‘": "’", "「": "」", "『": "』"}[
+                character
+            ]
+            masked[index] = "\ufffc"
     flags_text = "".join(masked)
+    boundary = r"(?<![^\s,，。.!！?？;；:：、])"
+    ending = r"(?=$|[\s,，。.!！?？;；、])(?!\.\d)"
     size_matches = list(
-        re.finditer(r"(?<!\S)--尺寸\s+(\d+)\s*[xX×]\s*(\d+)(?=\s|$)", flags_text)
+        re.finditer(boundary + r"--尺寸\s+(\d+)\s*[xX×]\s*(\d+)" + ending, flags_text)
     )
     ratio_matches = list(
-        re.finditer(r"(?<!\S)--比例\s+(\d+):(\d+)(?=\s|$)", flags_text)
+        re.finditer(
+            boundary + r"(?:--)?比例\s*[:：]?\s*(\d+)\s*[:：]\s*(\d+)" + ending,
+            flags_text,
+        )
     )
-    if len(size_matches) + len(ratio_matches) > 1:
-        raise ValueError("每次只能指定一个尺寸或比例。")
-    if ("--尺寸" in flags_text and not size_matches) or (
-        "--比例" in flags_text and not ratio_matches
+    starts = {match.start() for match in size_matches + ratio_matches}
+    markers = re.finditer(
+        r"--尺寸|--比例|" + boundary + r"比例(?=\s*[:：]?\s*[+-]?\d)", flags_text
+    )
+    if any(marker.start() not in starts for marker in markers):
+        raise ValueError("画幅写法例如 比例4：3、--比例 4:3 或 --尺寸 1024x1024。")
+    if len(size_matches) > 1 or (size_matches and ratio_matches):
+        raise ValueError("请只指定一组尺寸或比例，不要同时填写。")
+    ratios = [tuple(map(int, match.groups())) for match in ratio_matches]
+    if any(
+        min(a, b) < 1 or max(a, b) > 100 or not 1 / 8 <= a / b <= 8 for a, b in ratios
     ):
-        raise ValueError("尺寸写法为 --尺寸 1024x1024，比例写法为 --比例 3:4。")
+        raise ValueError("比例无效或过于极端。")
+    if len({(a // math.gcd(a, b), b // math.gcd(a, b)) for a, b in ratios}) > 1:
+        raise ValueError("检测到不同的画幅比例，请只保留你要使用的一个比例。")
     if size_matches:
         match = size_matches[0]
         width, height = map(int, match.groups())
@@ -156,9 +176,7 @@ def parse_command(
     else:
         a, b = map(
             int,
-            ratio_matches[0].groups()
-            if ratio_matches
-            else rendering.aspect_ratio.split(":"),
+            ratios[0] if ratios else rendering.aspect_ratio.split(":"),
         )
         if min(a, b) < 1 or max(a, b) > 100 or not 1 / 8 <= a / b <= 8:
             raise ValueError("比例无效或过于极端。")
@@ -168,7 +186,6 @@ def parse_command(
         height = max(
             256, round(math.sqrt(rendering.megapixels * 1024 * 1024 * b / a) / 16) * 16
         )
-        match = ratio_matches[0] if ratio_matches else None
         while width * height > rendering.max_megapixels * 1024 * 1024:
             if width >= height:
                 width -= 16
@@ -176,8 +193,23 @@ def parse_command(
                 height -= 16
     if width * height > rendering.max_megapixels * 1024 * 1024:
         raise ValueError("画幅超过配置的像素上限，请减小尺寸或调整插件配置。")
-    if match:
-        body = (body[: match.start()] + body[match.end() :]).strip()
+    # Remove only recognized canvas clauses and their adjacent clause separator.
+    for match in sorted(
+        size_matches + ratio_matches, key=lambda item: item.start(), reverse=True
+    ):
+        start, end = match.span()
+        left = start
+        while left and body[left - 1] in " \t":
+            left -= 1
+        if left and body[left - 1] in ",，;；、":
+            start = left - 1
+        if not body[end:].strip(" \t\r\n,，。.!！?？;；、"):
+            end = len(body)
+        elif not body[:start].strip():
+            while end < len(body) and body[end] in " \t,，;；、":
+                end += 1
+        body = body[:start] + body[end:]
+    body = body.strip()
     if not body:
         raise ValueError("请填写绘图要求。")
     return "generate", ImageRequest(body, width, height, mode)

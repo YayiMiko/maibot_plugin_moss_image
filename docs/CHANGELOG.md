@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Accept natural canvas clauses such as `，比例4：3`, punctuation-adjacent legacy flags, full-width colons and optional spaces without rewriting the remaining description.
+- Preserve quoted aspect-ratio text, accept repeated equivalent ratios and reject conflicting or malformed canvas instructions instead of silently using the default.
+
 ## v0.1.2 — 2026-10-17
 
 - Replace implicit generation and raw prompting with explicit generate, forced Caption and Layout routes.
