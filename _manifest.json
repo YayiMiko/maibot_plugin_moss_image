@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "id": "yayimiko.moss-image",
   "name": "MOSS 绘图",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MOSS Caption/Layout generation using the official skill and ComfyUI.",
   "author": {"name": "YayiMiko", "url": "https://github.com/YayiMiko"},
   "urls": {"repository": "https://github.com/YayiMiko/maibot_plugin_moss_image"},

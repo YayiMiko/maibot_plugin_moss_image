@@ -1,3 +1,4 @@
+# Copy to the plugin root as config.toml when configuring an installation.
 [plugin]
 config_version = "0.1.0"
 

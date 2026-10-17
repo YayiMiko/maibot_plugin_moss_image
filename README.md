@@ -3,9 +3,9 @@
 独立 MaiBot 插件：使用官方 MOSS-Image Prompt Enhancer skill 将自然语言规划为
 Caption 或 Layout，通过 ComfyUI 的 MOSS 工作流生成图片并发送到 QQ。
 
-当前版本 **v0.1.0**，为初始发布。已完成离线验证，尚未部署或完成真实 QQ／图像质量验收。
+当前版本 **v0.1.1**。已完成离线验证，尚未部署或完成真实 QQ／图像质量验收。
 
-[下载发布包](https://github.com/YayiMiko/maibot_plugin_moss_image/releases/latest) · [更新记录](CHANGELOG.md)
+[下载发布包](https://github.com/YayiMiko/maibot_plugin_moss_image/releases/latest) · [更新记录](docs/CHANGELOG.md) · [开发说明](docs/development.md)
 
 ## 指令
 
@@ -35,7 +35,8 @@ ComfyUI。宿主的群聊白名单／发送权限仍然有效。
 2. `planning.model_task`／`model_name`：宿主已配置的规划模型；不会注入聊天人设。
 3. `rendering`：与 ComfyUI 文件名一致的 MOSS 主模型、编码器和 VAE。
 
-`config.example.toml` 是不含凭证的完整配置示例。跨机器部署不能把回环地址当成
+[配置示例](docs/config.example.toml) 不含凭证，需要时复制到插件根目录并命名为
+`config.toml`。跨机器部署不能把回环地址当成
 用户电脑，插件不会启动本地 ComfyUI。仅启用文生图，图片只用于法术解析，
 不是像素级图生图，也不会从历史消息或“最新图片”隐式取图。
 

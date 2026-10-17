@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.1 — 2026-10-17
+
+- Move the configuration example, development instructions and changelog into `docs/`.
+- Keep a minimal root `AGENTS.md` entry point so repository-wide agent instructions remain discoverable.
+- Update README links and offline checks for the reorganized files.
+- Preserve runtime behavior, the configuration schema and pinned vendor resources.
+
 ## v0.1.0 — 2026-10-17
 
 Initial release of the independent MaiBot MOSS Image plugin.

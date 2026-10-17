@@ -297,7 +297,10 @@ def test_manifest_ci_and_skill_integrity_agree():
     manifest = json.loads((ROOT / "_manifest.json").read_text(encoding="utf-8"))
     assert manifest["sdk"]["min_version"] == "2.8.2"
     assert manifest["sdk"]["max_version"] == "2.13.99"
-    assert manifest["version"] == "0.1.0"
+    package = __import__("tomllib").loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    assert manifest["version"] == package["project"]["version"] == "0.1.1"
     assert set(manifest["capabilities"]) == {
         "llm.generate",
         "send.text",
@@ -309,7 +312,7 @@ def test_manifest_ci_and_skill_integrity_agree():
     assert "2.8.2" in ci and "2.13.0" in ci
     config = MossConfig.model_validate(
         __import__("tomllib").loads(
-            (ROOT / "config.example.toml").read_text(encoding="utf-8")
+            (ROOT / "docs/config.example.toml").read_text(encoding="utf-8")
         )
     )
     assert config.rendering.clip_name == "qwen3.5_9b_int8_convrot.safetensors"
