@@ -339,7 +339,7 @@ def test_manifest_ci_and_skill_integrity_agree():
         "api.call",
     }
     ci = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "2.8.2" in ci and "2.13.0" in ci
+    assert "2.8.2" not in ci and "maibot-plugin-sdk==2.13.0" in ci
     config = MossConfig.model_validate(
         __import__("tomllib").loads(
             (ROOT / "docs/config.example.toml").read_text(encoding="utf-8")

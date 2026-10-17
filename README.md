@@ -192,6 +192,9 @@ OC 名称及别名不做 Danbooru 查询，也不猜同人 tag。缺失 OC 会�
 
 ## 离线验证
 
+后续开发和 CI 统一使用与生产一致的 MaiBot SDK `2.13.0`，不再维护 `2.8.2`
+测试环境。CI 保留 Windows/Linux、Python 3.12/3.13 四种组合；历史发布的兼容声明不变。
+
 ```text
 uv sync --dev
 uv run ruff check .

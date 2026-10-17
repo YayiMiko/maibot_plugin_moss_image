@@ -36,6 +36,9 @@ restart only MaiBot when needed, never NapCat. New releases and real image
 generation still require separate requests. Do not deploy failed checks.
 Use an existing isolated Python environment or this project's environment;
 do not resolve the unrelated parent AstrBot checkout's conflicts.
+Use SDK 2.13.0 for ongoing local and CI validation, matching production. Do not
+recreate SDK 2.8.2 environments or add it back to the test matrix. Historical
+release compatibility declarations are not changed by this testing policy.
 
 New comments and logs are English. Use Google-style docstrings for non-obvious
 functions. Run Ruff, pytest, compile checks, resource hash checks and diff checks.

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Standardize ongoing local and CI tests on production SDK 2.13.0; remove the 2.8.2 matrix while retaining Windows/Linux and Python 3.12/3.13 coverage. Existing release artifacts and compatibility declarations are unchanged.
+
 ## v0.2.0 — 2026-10-18
 
 - Add per-user/conversation style settings (`/moss 风格 设置 1` for generation only, `2` for generation/comics/memes by default), with backward-compatible style storage and immutable admission snapshots. Caption/Layout illustration routes, reverse and metadata remain style-free.
