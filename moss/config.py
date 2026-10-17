@@ -1,5 +1,6 @@
 """Effective model, sampling and style configuration for explicit commands."""
 
+from typing import Literal
 from urllib.parse import urlparse
 
 from maibot_sdk import Field, PluginConfigBase
@@ -127,6 +128,10 @@ class Styles(PluginConfigBase):
         description="名称=完整风格内容；不做画师格式转换。聊天编辑会覆盖同名项。人数由用户要求和正文决定。",
     )
     default_style: str = Field(default="千代风格", max_length=80)
+    default_application: Literal["generate", "all"] = Field(
+        default="all",
+        description="风格默认用途：generate=仅生成；all=生成、漫画、表情包。规划和布局始终不加风格。可在 /moss 风格 设置 中为当前用户和会话选择。",
+    )
 
     @model_validator(mode="after")
     def valid_library(self):

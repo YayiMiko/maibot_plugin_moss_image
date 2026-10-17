@@ -192,7 +192,7 @@ class MossPlugin(MaiBotPlugin):
                 request.mode == "generate" or request.task_type != "illustration"
             ):
                 style_name, style_prompt = await self.styles.snapshot(
-                    scope, config.styles
+                    scope, config.styles, request.task_type
                 )
                 request = replace(
                     request,

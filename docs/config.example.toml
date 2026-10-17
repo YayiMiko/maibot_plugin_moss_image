@@ -29,6 +29,7 @@ timeout = 180
 positive_prefix = "best quality, highres,"
 presets = ["千代风格=@yuasa akira, @tomose shunsaku, @kithera, @enuzoushigaya, 简洁干净的二次元平涂画风，"]
 default_style = "千代风格"
+default_application = "all" # generate: only generation; all: generation, comics and memes
 
 [characters]
 admin_user_ids = []

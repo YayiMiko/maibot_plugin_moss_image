@@ -60,7 +60,7 @@ class ImageRequest:
 class StyleRequest:
     """A local preset operation, never an image-generation request."""
 
-    operation: Literal["list", "select", "edit", "create"]
+    operation: Literal["list", "select", "edit", "create", "settings", "application"]
     name: str = ""
     content: str = ""
 
@@ -95,6 +95,14 @@ def parse_command(
         parts = arguments.split(maxsplit=1)
         operation = parts[0]
         value = parts[1] if len(parts) > 1 else ""
+        if operation == "设置":
+            if not value:
+                return "style", StyleRequest("settings")
+            if value not in {"1", "2"}:
+                raise ValueError("请使用 /moss 风格 设置 1 或 /moss 风格 设置 2。")
+            return "style", StyleRequest(
+                "application", content="generate" if value == "1" else "all"
+            )
         if operation in {"编辑", "新建"}:
             name, content = parse_style_definition(value.strip())
             return "style", StyleRequest(

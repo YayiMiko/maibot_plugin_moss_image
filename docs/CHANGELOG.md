@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add per-user/conversation style settings (`/moss 风格 设置 1` for generation only, `2` for generation/comics/memes by default), with backward-compatible style storage and immutable admission snapshots. Caption/Layout illustration routes, reverse and metadata remain style-free.
+- Preserve media styles in legal global Caption/Layout descriptions before official compilation instead of relying on LLM copying; keep user intent separate, quality prefixes generation-only and pinned resources unchanged.
 - Adapt official composition guidance for tool-less JSON planning instead of sending filesystem/shell instructions to the LLM; keep pinned resources unchanged and compile only in the host. Structural repairs treat previous tool-call text as data, never executable instructions.
 - Add explicit OC management with stable appearance, separate optional wardrobe, aliases, owner/configured-admin mutation permissions and request-local snapshots; never select a default character or search OC names on Danbooru.
 - Add one-page comics with 1–4 flexible panels, private storyboards and official flat Layout exports; retain recurring characters across panels and restore frozen visible wording through internal bindings.

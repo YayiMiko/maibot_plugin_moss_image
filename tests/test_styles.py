@@ -111,6 +111,9 @@ def test_style_commands_do_not_call_models_or_clear_latest_diagnostic(plugin, co
                 "/moss 风格 新建 测试=flat, @artist",
                 "/moss 风格 编辑 测试=ink",
                 "/moss 风格 测试",
+                "/moss 风格 设置",
+                "/moss 风格 设置 1",
+                "/moss 风格 设置 2",
             )
         ):
             request = copy.deepcopy(command)
