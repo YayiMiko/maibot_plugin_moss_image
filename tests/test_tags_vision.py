@@ -165,8 +165,8 @@ def test_reverse_runtime_returns_only_tags_without_comfy_or_styles(
         "group_id": "group",
         "message": [{"type": "image", "data": {"url": "https://qpic.cn/test.png"}}],
     }
-    plugin.ctx.api.call.side_effect = (
-        lambda method, **kw: {"user_id": "bot", "nickname": "MOSS"}
+    plugin.ctx.api.call.side_effect = lambda method, **kw: (
+        {"user_id": "bot", "nickname": "MOSS"}
         if kw.get("action_name") == "get_login_info"
         else message
     )
