@@ -1,4 +1,4 @@
-"""Official-skill planning with a separate, evidence-only character stage."""
+"""Custom tags or official drafts with a shared evidence-only character stage."""
 
 import asyncio
 import json
@@ -7,6 +7,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from .commands import ImageRequest
+from .tag_planner import TAG_PLANNER_SYSTEM, clean_tag_output
 
 
 class PlanningError(RuntimeError):
@@ -25,6 +26,9 @@ class PromptPlan:
     mode: str
     compiled_prompt: str = ""
     prefixes: dict = field(default_factory=dict)
+    content_prompt: str = ""
+    body_format: str = ""
+    background_mode: str = ""
 
 
 class Planner:
@@ -64,7 +68,7 @@ class Planner:
         if not result.get("success") or result.get("error") or not text:
             raise PlanningError("unavailable")
         if not text.startswith("{") and re.match(
-            r"(?i)^(?:抱歉|对不起|我(?:不能|无法)|i (?:cannot|can't|am sorry)|i'm sorry)",
+            r"(?i)^(?:抱歉|对不起|我(?:不能|无法)|i (?:cannot|can't|am (?:sorry|unable))|i'm sorry|sorry[,!])",
             text,
         ):
             raise PlanningError("blocked")
@@ -83,7 +87,7 @@ class Planner:
             record_response: Async private latest-task diagnostic callback.
 
         Returns:
-            Validated editable draft and its unchanged official compiler output.
+            A tag plan or an editable official draft with its compiled output.
 
         Raises:
             PlanningError: Reserved intent, provider failure or invalid draft.
@@ -169,6 +173,8 @@ class Planner:
             }
             for character in characters
         ]
+        if request.mode == "generate":
+            return await self._generate_tags(request, config, evidence, record_response)
         system = (
             self.skill.instructions
             + (
@@ -185,25 +191,6 @@ class Planner:
                 else '\nThis route requires exactly {"caption":"..."}. Never return Layout, even for a detailed scene or a poster. Expand the original request directly into one cohesive English Caption; do not first produce or translate a Danbooru tag list.'
             )
         )
-        prefixes = {}
-        if request.mode == "generate":
-            identity_tags = []
-            for item in evidence:
-                identity = (
-                    item["canonical_tag"]
-                    if item.get("status") == "verified" and item.get("canonical_tag")
-                    else item["source_name"]
-                )
-                if identity not in identity_tags:
-                    identity_tags.append(identity)
-            prefixes = {
-                "positive_prefix": request.positive_prefix,
-                "identity_tags": identity_tags,
-                "style_name": request.style_name,
-                "style_prompt": request.style_prompt,
-                "oc_context": request.oc_context,
-            }
-            system += "\nGENERATE ROUTE: The host has frozen the prefix and selected style before this expansion. Use locked_prefixes as visual context so the Caption agrees with the requested medium, palette and rendering style, but never echo quality prefixes, artist handles, preset labels or a verbatim preset block. The host will append them without asking you to rewrite them. Preserve the user's subject, count, relationships, key clothing, action, expression and props. Expand relevant visible details, framing, lighting and composition for an attractive coherent image, with no minimum length. Do not replace a flat anime style with painterly or realistic rendering. If the original request explicitly specifies a setting, environment, weather or an existing background, keep it; otherwise use a simple white-background character illustration without inventing a location or foreground props. User-specific requirements outrank conflicting preset attributes such as solo. OC context is reserved and empty; never invent a preset character."
         user = json.dumps(
             {
                 "request": request.prompt,
@@ -211,7 +198,6 @@ class Planner:
                 "width": request.width,
                 "height": request.height,
                 "character_evidence": evidence,
-                **({"locked_prefixes": prefixes} if prefixes else {}),
             },
             ensure_ascii=False,
         )
@@ -238,26 +224,14 @@ class Planner:
                     request.height,
                     layout=request.mode == "layout",
                 )
-                final_prompt = prompt
-                if request.mode == "generate":
-                    fixed_parts = [
-                        request.positive_prefix,
-                        ", ".join(prefixes["identity_tags"]),
-                        request.style_prompt,
-                    ]
-                    heading = ", ".join(
-                        part.strip().rstrip(",，").rstrip()
-                        for part in fixed_parts
-                        if part.strip().rstrip(",，").rstrip()
-                    )
-                    final_prompt = (heading + ", " if heading else "") + prompt
                 return PromptPlan(
                     draft,
-                    final_prompt,
+                    prompt,
                     evidence,
                     request.mode,
                     prompt,
-                    prefixes,
+                    content_prompt=prompt,
+                    body_format=request.mode,
                 )
             except (ValueError, TypeError, KeyError, OverflowError) as exc:
                 if attempt:
@@ -269,3 +243,76 @@ class Planner:
                     + text
                 )
         raise PlanningError("invalid_draft")
+
+    async def _generate_tags(
+        self, request, config, evidence, record_response
+    ) -> PromptPlan:
+        """Build the custom tag body once, without invoking the official compiler."""
+        identities = list(
+            dict.fromkeys(
+                item["canonical_tag"]
+                if item.get("status") == "verified" and item.get("canonical_tag")
+                else item["source_name"]
+                for item in evidence
+            )
+        )
+        prefixes = {
+            "positive_prefix": request.positive_prefix,
+            "identity_tags": identities,
+            "style_name": request.style_name,
+            "style_prompt": request.style_prompt,
+            "oc_context": request.oc_context,
+        }
+        text = await self._call(
+            TAG_PLANNER_SYSTEM,
+            json.dumps(
+                {
+                    "request": request.prompt,
+                    "width": request.width,
+                    "height": request.height,
+                    "character_evidence": evidence,
+                    "locked_prefixes": prefixes,
+                },
+                ensure_ascii=False,
+            ),
+            config,
+            record_response,
+            "tags",
+        )
+        marker = re.search(r"\s*\[\[BACKGROUND:(portrait|scene)\]\]\s*$", text, re.I)
+        background = marker[1].lower() if marker else "portrait"
+        if marker:
+            text = text[: marker.start()]
+        reserved = (
+            "best quality",
+            "highres",
+            "masterpiece",
+            *identities,
+            *re.split(r"[,，]", request.positive_prefix),
+            *re.split(r"[,，]", request.style_prompt),
+        )
+        try:
+            body = clean_tag_output(text, exclude=reserved)
+            if background == "portrait":
+                body = clean_tag_output(body + ", simple background, white background")
+        except ValueError as exc:
+            raise PlanningError("invalid_tags") from exc
+        heading = ", ".join(
+            part.strip().rstrip(",，").rstrip()
+            for part in (
+                request.positive_prefix,
+                ", ".join(identities),
+                request.style_prompt,
+            )
+            if part.strip().rstrip(",，").rstrip()
+        )
+        return PromptPlan(
+            draft={"tags": body},
+            prompt=(heading + ", " if heading else "") + body,
+            characters=evidence,
+            mode="generate",
+            prefixes=prefixes,
+            content_prompt=body,
+            body_format="tags",
+            background_mode=background,
+        )

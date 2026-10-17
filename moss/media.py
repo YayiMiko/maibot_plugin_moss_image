@@ -17,6 +17,10 @@ from .comfy import validate_image
 MAX_BYTES = 32 * 1024 * 1024
 
 
+class MultipleImagesError(ValueError):
+    """Require an explicit single-image target instead of silently picking one."""
+
+
 class MetadataReader:
     """Resolve only this message and its explicit quote, never a latest image."""
 
@@ -92,11 +96,12 @@ class MetadataReader:
         await asyncio.to_thread(validate_image, content)
         return content
 
-    async def resolve(self, request: dict) -> bytes:
+    async def resolve(self, request: dict, *, single_only: bool = False) -> bytes:
         """Authorize current/quoted messages before reading any image bytes.
 
         Args:
             request: Current message ID, group/user IDs and optional explicit reply.
+            single_only: Reject multiple pictures in the selected source message.
 
         Returns:
             Original bytes of the first quoted image, or the attached image.
@@ -160,6 +165,15 @@ class MetadataReader:
                         "Image message belongs to another private conversation"
                     )
         for message in messages:
+            if (
+                single_only
+                and sum(
+                    isinstance(segment, dict) and segment.get("type") == "image"
+                    for segment in message.get("message", [])
+                )
+                > 1
+            ):
+                raise MultipleImagesError("Multiple explicit images")
             for segment in message.get("message", []):
                 if (
                     not isinstance(segment, dict)

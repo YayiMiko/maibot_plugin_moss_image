@@ -117,7 +117,7 @@ class Styles(PluginConfigBase):
     positive_prefix: str = Field(
         default="best quality, highres,",
         max_length=4096,
-        description="仅用于 /moss 生成；在官方 Caption 编译后由程序拼接。留空不添加。",
+        description="仅用于 /moss 生成；在千代式正文规划后由程序拼接。留空不添加。",
     )
     presets: list[str] = Field(
         default_factory=lambda: [
@@ -151,6 +151,18 @@ class Delivery(PluginConfigBase):
     group_forward_threshold: int = Field(default=800, ge=100, le=32768)
 
 
+class Vision(PluginConfigBase):
+    __ui_label__ = "图片反推"
+    model_task: str = Field(
+        default="vlm", description="宿主原生多模态模型任务；不会使用聊天人设。"
+    )
+    model_name: str = Field(
+        default="", description="可指定宿主已配置的视觉模型；留空沿用 vlm 路由。"
+    )
+    max_tokens: int = Field(default=2048, ge=256, le=8192)
+    timeout: int = Field(default=180, ge=10, le=600)
+
+
 class MossConfig(PluginConfigBase):
     plugin: PluginMetadata = Field(default_factory=PluginMetadata)
     connection: Connection = Field(default_factory=Connection)
@@ -158,3 +170,4 @@ class MossConfig(PluginConfigBase):
     styles: Styles = Field(default_factory=Styles)
     rendering: Rendering = Field(default_factory=Rendering)
     delivery: Delivery = Field(default_factory=Delivery)
+    vision: Vision = Field(default_factory=Vision)

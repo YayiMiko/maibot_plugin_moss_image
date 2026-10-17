@@ -7,9 +7,10 @@ from dataclasses import asdict
 
 from .comfy import ComfyClient
 from .delivery import send_result
-from .media import MetadataReader, extract_metadata
+from .media import MetadataReader, MultipleImagesError, extract_metadata
 from .planner import PlanningError
 from .storage import atomic_write
+from .vision import VisionError, reverse_image
 from .workflow import build_workflow
 
 
@@ -34,9 +35,13 @@ class TaskRunner:
         directory = self.store.runtime / record["task_id"]
         started = time.monotonic()
         try:
+
+            async def capture(stage, response):
+                await self.store.append_llm(record["task_id"], stage, response)
+
             if action != "style":
                 await self.store.begin_llm(record)
-            if action in {"metadata", "style"}:
+            if action in {"metadata", "style", "reverse"}:
                 if action == "style":
                     record["status"] = "editing_style"
                     await self.store.save(record)
@@ -49,10 +54,26 @@ class TaskRunner:
                     content = await asyncio.wait_for(
                         MetadataReader(
                             self.ctx, config.connection.qq_cache_roots
-                        ).resolve(context),
+                        ).resolve(context, single_only=action == "reverse"),
                         timeout=90,
                     )
-                    parts = await asyncio.to_thread(extract_metadata, content)
+                    if action == "reverse":
+                        record.update(status="reversing", body_format="tags")
+                        await self.store.save(record)
+                        await asyncio.to_thread(
+                            atomic_write,
+                            directory / "vision_config.json",
+                            config.vision.model_dump(),
+                        )
+                        tags = await reverse_image(
+                            self.ctx, config.vision, content, capture
+                        )
+                        await asyncio.to_thread(
+                            atomic_write, directory / "prompt.txt", tags
+                        )
+                        parts = ["图片反推结果（视觉推测，不是原始提示词）：", tags]
+                    else:
+                        parts = await asyncio.to_thread(extract_metadata, content)
                 confirmed = await send_result(
                     self.ctx,
                     context["stream_id"],
@@ -72,17 +93,21 @@ class TaskRunner:
                     atomic_write, directory / "config.json", config.model_dump()
                 )
 
-                async def capture(stage, response):
-                    await self.store.append_llm(record["task_id"], stage, response)
-
                 plan = await self.planner.plan(request, config.planning, capture)
                 record.update(
                     mode=plan.mode,
                     characters=plan.characters,
                     width=request.width,
                     height=request.height,
-                    skill_revision=self.planner.skill.revision,
+                    body_format=plan.body_format,
+                    planner="chiyo-tags"
+                    if request.mode == "generate"
+                    else "official-skill",
                 )
+                if request.mode != "generate":
+                    record["skill_revision"] = self.planner.skill.revision
+                if plan.background_mode:
+                    record["background_mode"] = plan.background_mode
                 if plan.draft is not None:
                     await asyncio.to_thread(
                         atomic_write, directory / "draft.json", plan.draft
@@ -91,10 +116,14 @@ class TaskRunner:
                     atomic_write, directory / "prompt.txt", plan.prompt
                 )
                 await asyncio.to_thread(
-                    atomic_write,
-                    directory / "compiled_prompt.txt",
-                    plan.compiled_prompt,
+                    atomic_write, directory / "content_prompt.txt", plan.content_prompt
                 )
+                if plan.compiled_prompt:
+                    await asyncio.to_thread(
+                        atomic_write,
+                        directory / "compiled_prompt.txt",
+                        plan.compiled_prompt,
+                    )
                 await asyncio.to_thread(
                     atomic_write, directory / "prefixes.json", plan.prefixes
                 )
@@ -159,6 +188,8 @@ class TaskRunner:
             record["error_type"] = type(exc).__name__
             if isinstance(exc, PlanningError):
                 record["error_kind"] = exc.reason
+            if isinstance(exc, VisionError):
+                record["error_kind"] = exc.reason
             await self.store.save(record)
             self.ctx.logger.warning(
                 "MOSS task failed: task=%s error=%s",
@@ -175,6 +206,19 @@ class TaskRunner:
                     if exc.reason == "blocked"
                     else "提示词规划未完成，未提交生图，也没有用默认内容代替。"
                 )
+            elif action == "reverse":
+                if isinstance(exc, MultipleImagesError):
+                    notice = "反推一次只处理一张图片，请单独附图或引用目标图片。"
+                elif isinstance(exc, VisionError):
+                    notice = (
+                        "视觉模型拒绝了本次识图请求，没有返回默认内容。"
+                        if exc.reason == "blocked"
+                        else "图片反推未完成，请检查视觉模型配置或稍后再试；没有自动重试。"
+                    )
+                else:
+                    notice = (
+                        "未能读取反推图片，请附一张静态图片或引用同一会话中的目标图片。"
+                    )
             elif action == "metadata":
                 notice = "未能读取本次图片，请附图或引用同一会话中含图片的消息。"
             else:

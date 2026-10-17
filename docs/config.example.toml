@@ -19,6 +19,12 @@ timeout = 180
 danbooru_enabled = true
 danbooru_budget = 8
 
+[vision]
+model_task = "vlm"
+model_name = ""
+max_tokens = 2048
+timeout = 180
+
 [styles]
 positive_prefix = "best quality, highres,"
 presets = ["千代风格=@yuasa akira, @tomose shunsaku, @kithera, @enuzoushigaya, 简洁干净的二次元平涂画风，"]

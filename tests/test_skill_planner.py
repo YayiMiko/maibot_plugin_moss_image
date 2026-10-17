@@ -266,7 +266,7 @@ def test_danbooru_adapter_uses_character_evidence_not_tag_replacement(monkeypatc
     assert result[0]["appearance_anchors"] == ["blonde_hair"]
 
 
-@pytest.mark.parametrize("mode", ["caption", "generate"])
+@pytest.mark.parametrize("mode", ["caption"])
 def test_caption_routes_repair_accidental_layout_once(mode):
     planner, ctx, _ = make_planner(
         [
@@ -283,10 +283,19 @@ def test_caption_routes_repair_accidental_layout_once(mode):
     assert ctx.llm.generate.await_count == 2
 
 
-def test_generate_expands_original_once_with_frozen_context_and_separate_body():
-    caption = 'An adult traveler in a raincoat, smiling beside a sign reading "你好！".\nFine raindrops catch the light.'
+def test_generate_expands_original_once_with_frozen_context_and_separate_body(
+    monkeypatch,
+):
+    tags = 'adult traveler, raincoat, train station, smile, sign reading "你好！", raindrops'
     planner, ctx, _ = make_planner(
-        [{"success": True, "response": json.dumps({"caption": caption})}]
+        [{"success": True, "response": tags + " [[BACKGROUND:scene]]"}]
+    )
+    monkeypatch.setattr(
+        planner.skill,
+        "compile",
+        lambda *a, **kw: pytest.fail(
+            "Tag generation must not invoke the official compiler"
+        ),
     )
     request = ImageRequest(
         "成年旅人穿雨衣站在车站，牌子写“你好！”",
@@ -298,21 +307,23 @@ def test_generate_expands_original_once_with_frozen_context_and_separate_body():
         style_prompt="@artist name, 简洁平涂，",
     )
     plan = asyncio.run(planner.plan(request, Planning(danbooru_enabled=False)))
-    assert plan.compiled_prompt == caption
-    assert plan.prompt == "best quality, highres, @artist name, 简洁平涂, " + caption
+    assert plan.compiled_prompt == "" and plan.content_prompt == tags
+    assert plan.body_format == "tags" and plan.background_mode == "scene"
+    assert plan.prompt == "best quality, highres, @artist name, 简洁平涂, " + tags
     assert (
         plan.prompt.count("best quality") == 1
         and plan.prompt.count("@artist name") == 1
     )
-    assert plan.draft == {"caption": caption}
+    assert plan.draft == {"tags": tags}
     assert plan.prefixes["oc_context"] is None
     assert ctx.llm.generate.await_count == 1
     messages = ctx.llm.generate.call_args.args[0]
     payload = json.loads(messages[1]["content"])
     assert payload["request"] == request.prompt
     assert payload["locked_prefixes"]["style_prompt"] == request.style_prompt
-    assert planner.skill.instructions in messages[0]["content"]
-    assert "simple white-background" in messages[0]["content"]
+    assert planner.skill.instructions not in messages[0]["content"]
+    assert "white background" in messages[0]["content"]
+    assert "BACKGROUND" not in plan.prompt
 
 
 @pytest.mark.parametrize("mode", ["caption", "layout"])
@@ -353,7 +364,7 @@ def test_candidate_normalization_never_discards_original_identity(candidates, ex
     planner, ctx, resolver = make_planner(
         [
             {"success": True, "response": json.dumps(extraction)},
-            {"success": True, "response": '{"caption":"Lumine, wearing a raincoat."}'},
+            {"success": True, "response": "raincoat, standing [[BACKGROUND:portrait]]"},
         ]
     )
     plan = asyncio.run(
@@ -379,7 +390,7 @@ def test_generate_uses_only_verified_identity_as_a_canonical_prefix():
                 "success": True,
                 "response": '{"characters":[{"source_name":"荧","candidates":["Lumine_(Genshin_Impact)"]}]}',
             },
-            {"success": True, "response": '{"caption":"Lumine wears a raincoat."}'},
+            {"success": True, "response": "raincoat, standing [[BACKGROUND:portrait]]"},
         ]
     )
     resolver.resolve.return_value = [

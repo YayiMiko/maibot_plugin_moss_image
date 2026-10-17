@@ -345,10 +345,14 @@ def test_atomic_storage_replaces_without_leftover_temp(tmp_path):
     assert list(tmp_path.iterdir()) == [path]
 
 
-def test_generate_saves_official_body_prefixes_and_exact_submitted_prompt(
+def test_generate_saves_tag_body_prefixes_and_exact_submitted_prompt(
     plugin, command, comfy_transport
 ):
     command["text"] = "/moss 生成 白猫睡在窗边"
+    plugin.ctx.llm.generate.return_value = {
+        "success": True,
+        "response": "white cat, sleeping, windowsill [[BACKGROUND:scene]]",
+    }
 
     async def run():
         await plugin.on_load()
@@ -361,17 +365,20 @@ def test_generate_saves_official_body_prefixes_and_exact_submitted_prompt(
         )
         directory = plugin.store.runtime / record["task_id"]
         prompt = (directory / "prompt.txt").read_text(encoding="utf-8")
-        body = (directory / "compiled_prompt.txt").read_text(encoding="utf-8")
+        body = (directory / "content_prompt.txt").read_text(encoding="utf-8")
+        assert not (directory / "compiled_prompt.txt").exists()
         prefixes = json.loads((directory / "prefixes.json").read_text(encoding="utf-8"))
         graph = json.loads(
             next(r.content for r in comfy_transport if r.url.path == "/prompt")
         )["prompt"]
         assert prompt == graph["4"]["inputs"]["text"]
         assert prompt.startswith(frozen_prefix) and "LATER PREFIX" not in prompt
-        assert body == "A white cat sleeping on a windowsill."
+        assert body == "white cat, sleeping, windowsill"
         assert prompt.endswith(body) and prefixes["style_name"] == "千代风格"
         assert prefixes["positive_prefix"] == frozen_prefix
         assert record["mode"] == "generate" and record["status"] == "sent"
+        assert record["body_format"] == "tags" and record["planner"] == "chiyo-tags"
+        assert "skill_revision" not in record
         await plugin.on_unload()
 
     asyncio.run(run())

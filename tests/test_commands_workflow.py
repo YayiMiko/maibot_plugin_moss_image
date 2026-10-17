@@ -40,6 +40,7 @@ def test_removed_routes_cannot_accidentally_generate(word):
         ("/moss 布局 poster", "generate", "layout"),
         ("/moss 风格", "style", None),
         ("[image] /moss 解析法术", "metadata", None),
+        ("[image] /moss 反推", "reverse", None),
         ("/moss", "help", None),
     ],
 )

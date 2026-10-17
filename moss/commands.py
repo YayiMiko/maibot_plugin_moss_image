@@ -1,4 +1,4 @@
-"""Explicit four-route command grammar and preplanning canvas resolution."""
+"""Explicit command grammar, readable help and preplanning canvas resolution."""
 
 import math
 import re
@@ -8,7 +8,16 @@ from typing import Literal
 from .styles import parse_style_definition
 
 COMMAND_PATTERN = r"(?i)^\s*(?:(?:\[image\]|@[^\r\n]+?)\s*)*(?P<command>/moss(?:\s|$))"
-HELP = "/moss 生成 <要求>\n/moss 规划 <要求>（全权 Caption）\n/moss 布局 <要求>\n/moss 风格\n/moss 解析法术（附图或引用图）\n单次画幅：--尺寸 1024x1024 或 --比例 3:4"
+HELP = (
+    "/moss 生成 <要求>\n千代风格的自然语言扩写生图。\n\n"
+    "/moss 规划 <要求>\n官方自然语言扩写生图，不叠加固定前缀或风格。\n\n"
+    "/moss 布局 <要求>\n官方自然语言扩写＋布局规划生图，适合海报、文字排版和控制物体位置。\n\n"
+    "/moss 风格\n查看、选择、新建或编辑生成模式使用的风格。\n\n"
+    "/moss 解析法术\n附图或引用原图，读取图片中保存的提示词。压缩图可能没有生成信息。\n\n"
+    "/moss 反推\n附图或引用单张图片，让视觉模型根据画面推测绘图提示词，不是还原原词。\n\n"
+    "画幅参数（用于生图指令）：\n--尺寸 1024x1024：指定宽×高像素。\n"
+    "--比例 3:4：指定画幅比例，尺寸自动计算。"
+)
 REMOVED = {
     "描述",
     "状态",
@@ -94,6 +103,10 @@ def parse_command(
         return "style", StyleRequest("select", name)
     if keyword in REMOVED:
         raise ValueError("该指令已移除或未开放，请使用 /moss 查看可用写法。")
+    if keyword == "反推":
+        if body != "反推":
+            raise ValueError("反推不接受文字参数，请附图或引用单张图片。")
+        return "reverse", None
     if body == "解析法术":
         return "metadata", None
     if keyword == "解析法术":

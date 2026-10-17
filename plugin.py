@@ -85,7 +85,7 @@ class MossPlugin(MaiBotPlugin):
 
     @Command(
         "moss",
-        description="MOSS 生成、Caption 规划、布局、风格与法术解析",
+        description="MOSS 生成、官方规划、布局、风格、法术解析与图片反推",
         pattern=COMMAND_PATTERN,
     )
     async def handle_moss(self, **kwargs):

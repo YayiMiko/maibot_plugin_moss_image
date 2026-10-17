@@ -4,15 +4,17 @@ This is an independent MaiBot plugin, not AstrBot core or the Anima plugin.
 Use public MaiBot SDK APIs only. Never modify sibling projects, host persona,
 account permissions, local ComfyUI workflows or live service configuration.
 
-Keep explicit generate, caption, layout, style and metadata command routes.
+Keep explicit generate, caption, layout, style, metadata and reverse routes.
 Show style selection and editing only in the style submenu. Raw prompting is
 removed. Do not add status, debug, character libraries, task recovery, image
 editing, comic or meme commands. OC, comic and meme interfaces remain reserved.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru
-tag lists. Generate mode wraps the official Caption with frozen configured
-prefixes and styles; Caption and Layout modes remain unwrapped. Never clean
+tag lists. Generate mode uses an Anima-style tag planner, not the official
+Caption expander, and assembles frozen prefixes and styles afterward.
+Reverse uses the host VLM and returns observed image tags without style injection.
+Caption and Layout modes remain unwrapped. Never clean
 Caption prose as a comma-separated tag list or invent an extra artist library.
 
 Keep tasks, configuration, destinations and outputs request-local. Never read a

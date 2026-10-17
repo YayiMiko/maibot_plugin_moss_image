@@ -17,7 +17,8 @@ from moss.styles import StyleStore, parse_style_definition
 def test_style_help_is_only_in_the_submenu():
     assert "/moss 风格" in HELP
     assert "/moss 风格 <名称>" not in HELP
-    assert "新建" not in HELP and "编辑" not in HELP and "关闭" not in HELP
+    assert "/moss 风格 新建" not in HELP and "/moss 风格 编辑" not in HELP
+    assert "关闭" not in HELP
 
 
 @pytest.mark.parametrize("operation", ["新建", "编辑"])
