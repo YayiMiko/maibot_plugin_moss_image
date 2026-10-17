@@ -1,0 +1,19 @@
+MaiBot MOSS Image
+Copyright (c) 2026 YayiMiko
+
+Original plugin code is available under LICENSE (MIT).
+
+The official MOSS-Image Prompt Enhancer is bundled unchanged from
+OpenMOSS/MOSS-Image c1355e6b1986dfe8fba3c0455783a05899212342.
+Its Apache-2.0 license is in vendor/moss_skill/LICENSE. Source provenance and
+byte-level SHA-256 hashes are in vendor/provenance.json.
+
+Danbooru lookup code is bundled from YayiMiko/maibot_plugin_anima_master
+b448ad39d5262512923bb766a71f06af5bb4d0ed under vendor/anima/LICENSE (MIT).
+The retention implementation in moss/retention.py is adapted from that same
+upstream revision's storage_retention.py. QQ message-resolution and delivery
+logic also builds on the MIT-licensed MaiBot Anima implementation.
+
+workflows/moss-int8-api.json is a native-node API adaptation of the local
+MOSS INT8 UI workflow. It uses explicit bindings and does not overwrite user
+workflows. This plugin does not bundle model weights or authorize their use.

@@ -1,0 +1,23 @@
+{
+  "moss_skill": {
+    "repository": "https://github.com/OpenMOSS/MOSS-Image",
+    "commit": "c1355e6b1986dfe8fba3c0455783a05899212342",
+    "path": "skills/moss-image-prompt-enhancer",
+    "license": "Apache-2.0",
+    "sha256": {
+      "SKILL.md": "72cd39883af0b6c6997038b068af2d858dcd968ca43466ebf93fea21833878a0",
+      "references/layout.md": "e3d74ded6ab402ef69131fc7609117affff5ee1c6d14a49752d44c865b79525c",
+      "scripts/compile_prompt.py": "1d75780cf9f22f9ebed1a33d8100158f8d73ebfe59a5d435c1cc8c8e1374a8a3",
+      "scripts/test_compile_prompt.py": "2ef6ec435575bfaa9797008a2ffd30790b291eefbc190de00274a74b0de34d5c",
+      "agents/openai.yaml": "d215006ac6563bd63fb95a331a9613e9c223517eaa402960b102f3431c243996",
+      "LICENSE": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5"
+    }
+  },
+  "anima": {
+    "repository": "https://github.com/YayiMiko/maibot_plugin_anima_master",
+    "commit": "b448ad39d5262512923bb766a71f06af5bb4d0ed",
+    "path": "anima/prompts/danbooru_tags.py",
+    "license": "MIT",
+    "sha256": {"danbooru_tags.py": "4dae9d67119adc55c2154fb7da39a27b184a05cf5f0050cc28c81d58a81b4c5f"}
+  }
+}

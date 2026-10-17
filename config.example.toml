@@ -1,0 +1,36 @@
+[plugin]
+config_version = "0.1.0"
+
+[connection]
+enabled = true
+comfyui_base_url = "http://127.0.0.1:8188"
+allowed_sender_ids = []
+max_pending = 4
+generation_timeout = 600
+retention_days = 30
+qq_cache_roots = []
+
+[planning]
+model_task = "utils"
+model_name = ""
+max_tokens = 4096
+timeout = 180
+danbooru_enabled = true
+danbooru_budget = 8
+
+[rendering]
+unet_name = "moss_image_sft_int8_convrot.safetensors"
+clip_name = "qwen3.5_9b_int8_convrot.safetensors"
+vae_name = "flux2-vae.safetensors"
+aspect_ratio = "3:4"
+megapixels = 1
+max_megapixels = 2
+steps = 50
+cfg = 3
+sampler = "euler"
+scheduler = "sgm_uniform"
+negative_prompt = "worst quality, bad anatomy, watermark, jpeg artifact"
+
+[delivery]
+timeout_seconds = 200
+group_forward_threshold = 800
