@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.2 — 2026-10-17
 
 - Replace implicit generation and raw prompting with explicit generate, forced Caption and Layout routes.
 - Make generate mode preserve the original user description without LLM expansion, translation, tag cleaning, official compilation or implicit white backgrounds; assemble fixed quality prefixes, styles and verified identity references only.
@@ -13,6 +13,9 @@
 - Keep the mandatory host configuration callback and test all SDK lifecycle overrides.
 - Retain the official skill, compiler, workflow models and uncertain-delivery safeguards unchanged.
 - Withdraw the GitHub releases and tags for v0.1.0 and v0.1.1; preserve commit history and local installation archives.
+- Validate 183 offline plugin tests on SDK 2.8.2 and 2.13.0, plus 8 upstream compiler tests; preserve the existing configuration schema and runtime settings.
+
+Server loading and source/configuration consistency are verified separately. This release does not claim live image-generation or visual-quality acceptance for the direct-input route.
 
 ## v0.1.1 — 2026-10-17
 

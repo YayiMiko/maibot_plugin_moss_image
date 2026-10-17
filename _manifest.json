@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "id": "yayimiko.moss-image",
   "name": "MOSS 绘图",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Direct-text MOSS generation, official Caption/Layout planning, image metadata and vision reverse prompting.",
   "author": {"name": "YayiMiko", "url": "https://github.com/YayiMiko"},
   "urls": {"repository": "https://github.com/YayiMiko/maibot_plugin_moss_image"},

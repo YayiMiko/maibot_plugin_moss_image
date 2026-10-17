@@ -330,7 +330,7 @@ def test_manifest_ci_and_skill_integrity_agree():
     package = __import__("tomllib").loads(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
-    assert manifest["version"] == package["project"]["version"] == "0.1.1"
+    assert manifest["version"] == package["project"]["version"] == "0.1.2"
     assert set(manifest["capabilities"]) == {
         "llm.generate",
         "send.text",
