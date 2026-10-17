@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 — 2026-10-18
 
 - Add per-user/conversation style settings (`/moss 风格 设置 1` for generation only, `2` for generation/comics/memes by default), with backward-compatible style storage and immutable admission snapshots. Caption/Layout illustration routes, reverse and metadata remain style-free.
 - Preserve media styles in legal global Caption/Layout descriptions before official compilation instead of relying on LLM copying; keep user intent separate, quality prefixes generation-only and pinned resources unchanged.
@@ -8,9 +8,12 @@
 - Add explicit OC management with stable appearance, separate optional wardrobe, aliases, owner/configured-admin mutation permissions and request-local snapshots; never select a default character or search OC names on Danbooru.
 - Add one-page comics with 1–4 flexible panels, private storyboards and official flat Layout exports; retain recurring characters across panels and restore frozen visible wording through internal bindings.
 - Add single static memes with square defaults, official Caption/Layout selection and explicit copy preservation without forced lettering or chibi style.
-- Preserve direct-input generation, official pinned resources, model/ComfyUI configuration and at-most-once delivery; no live generation or new release is implied by offline validation.
+- Preserve direct-input generation, official pinned resources, model/ComfyUI configuration and at-most-once delivery.
 - Accept natural canvas clauses such as `，比例4：3`, punctuation-adjacent legacy flags, full-width colons and optional spaces without rewriting the remaining description.
 - Preserve quoted aspect-ratio text, accept repeated equivalent ratios and reject conflicting or malformed canvas instructions instead of silently using the default.
+- Validate 360 offline plugin tests on SDK 2.8.2 and 2.13.0, plus 8 upstream compiler tests; retain configuration schema version `0.1.0` and migrate older style storage without replacing library data.
+
+Server loading and source/configuration consistency are checked separately. Offline validation does not imply live image-generation, QQ delivery or visual-quality acceptance; this release does not automatically retry old tasks or generate test images.
 
 ## v0.1.2 — 2026-10-17
 
