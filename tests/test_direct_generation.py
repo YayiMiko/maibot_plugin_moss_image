@@ -219,3 +219,60 @@ def test_chinese_only_style_and_body_do_not_require_tags_or_translation():
     assert plan.prompt == "水墨画\n" + body
     assert plan.content_prompt == body and plan.compiled_prompt == ""
     ctx.llm.generate.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mode", ["generate", "caption"])
+def test_identity_example_contains_boolean_depiction_and_name_boundaries(mode):
+    replies = [{"success": True, "response": '{"characters":[]}'}]
+    if mode == "caption":
+        replies.append({"success": True, "response": '{"caption":"A sleepy Ganyu."}'})
+    planner, ctx, _ = make_planner(replies)
+    asyncio.run(planner.plan(ImageRequest("甘雨困困", 1024, 1024, mode), Planning()))
+    instruction = ctx.llm.generate.await_args_list[0].args[0][0]["content"]
+    assert '"depicted":true' in instruction and 'not "甘雨困困"' in instruction
+
+
+@pytest.mark.parametrize(
+    "repair", ["verified", "false", "missing", "string", "refusal", "timeout"]
+)
+def test_direct_missing_depiction_repairs_once_without_rewriting_or_fabrication(repair):
+    identity = {"source_name": "甘雨", "candidates": ["ganyu_(genshin_impact)"]}
+    fixed = {**identity, "depicted": True}
+    if repair == "false":
+        fixed["depicted"] = False
+    elif repair == "missing":
+        fixed.pop("depicted")
+    elif repair == "string":
+        fixed["depicted"] = "true"
+    result = (
+        {"success": True, "blocked": True, "response": "private refusal"}
+        if repair == "refusal"
+        else {"success": True, "response": json.dumps({"characters": [fixed]})}
+    )
+    planner, ctx, resolver = make_planner(
+        [
+            {"success": True, "response": json.dumps({"characters": [identity]})},
+            TimeoutError("private error") if repair == "timeout" else result,
+        ]
+    )
+    resolver.resolve.return_value = [
+        {
+            "source_name": "甘雨",
+            "status": "verified",
+            "canonical_tag": "ganyu_(genshin_impact)",
+        }
+    ]
+    capture = AsyncMock()
+    original = "甘雨困困，不要改写这句"
+    plan = asyncio.run(
+        planner.plan(
+            ImageRequest(original, 1024, 1024, "generate"), Planning(), capture
+        )
+    )
+    assert plan.content_prompt == original and plan.prompt.endswith(original)
+    assert ctx.llm.generate.await_count == 2
+    assert ("ganyu_(genshin_impact)" in plan.prompt) == (repair == "verified")
+    if repair != "verified":
+        resolver.resolve.assert_not_awaited()
+    if repair in {"missing", "string", "refusal", "timeout"}:
+        assert capture.await_args_list[-1].args[0] == "identity_invalid"

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve verified Danbooru identity bindings through comic/meme exports, validate per-panel/item references, and inject canonical tags in legal Caption/Layout descriptions rather than relying on LLM copying. Unverified identities remain unverified and OC names are never inferred.
+- Make media styles actual prefixes of Caption or `summary.caption`, relocating exact echoed styles without rewriting ordinary words, drawing preset text or changing standalone Caption/Layout routes.
+- Include boolean depiction in the identity JSON example, distinguish missing fields from exclusions with one bounded repair, and clarify adjacent name/expression boundaries. Direct generation continues to preserve the user's original description when optional research fails.
 - Standardize ongoing local and CI tests on production SDK 2.13.0; remove the 2.8.2 matrix while retaining Windows/Linux and Python 3.12/3.13 coverage. Existing release artifacts and compatibility declarations are unchanged.
 
 ## v0.2.0 — 2026-10-18
