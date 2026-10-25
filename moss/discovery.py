@@ -39,11 +39,24 @@ class DiscoveryRouter:
             return name
         return self.order[-1]
 
-    async def search(self, query: str, *, sources=None):
-        """Run one search on the next route and return (page, route) pairs."""
+    async def search(
+        self,
+        query: str,
+        *,
+        route_name: str | None = None,
+        sources=None,
+        reason: str = "",
+        change: str = "",
+    ):
+        """Run one search on an explicit or next route and return (page, route) pairs."""
         if self.calls >= self.config.limits.search_budget:
             return []
-        name = self._next_route()
+        if route_name is None:
+            name = self._next_route()
+        else:
+            name = route_name
+            if name not in self.routes:
+                return []
         route = self.routes[name]
         before = len(route.searches)
         try:
@@ -55,6 +68,10 @@ class DiscoveryRouter:
             if len(route.searches) > before:
                 trace = route.searches[-1]
                 trace.setdefault("route", name)
+                if reason:
+                    trace["reason"] = reason
+                if change:
+                    trace["change"] = change
                 self.searches.append(trace)
             self.page_priorities.update(route.page_priorities)
         return [(page, name) for page in pages]

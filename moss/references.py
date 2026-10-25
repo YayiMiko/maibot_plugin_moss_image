@@ -571,6 +571,8 @@ class ReferenceClient:
             "signature": signature,
             "image_failures": image_failures,
             "image_origin": page.image_origins[image_path],
+            "image_decoded": True,
+            "source_route": "publisher",
         }
         return record, normalized
 

@@ -29,19 +29,30 @@ review ceilings. Preserve pending candidates with their original design directio
 X is the priority discovery route, not the only route: use Tavily status results,
 confirm the exact post with its page and syndication media, and fall back to the
 approved publisher sources. Never use Tavily image results as the reference and
-never log in, read cookies or run a resident browser. Reject obvious tutorials,
-placeholder templates, ads, news/product photos, text-only posts and profiles;
-do not reject a finished artwork solely for mentioning an AI tool. Do not use
-plain author-name queries; author extension needs unvalidated `from:`/timeline work.
+never log in, read cookies or run a resident browser. Treat prompts, tutorials,
+templates, sales language and AI-tool names as content hints only; never reject a
+complete artwork from text alone. Objective rejects are non-posts, unconfirmed
+association, no static image, avatars and read/decode failures. The reviewer judges
+visible tutorial screenshots, placeholder templates, product photos and adaptation
+against the actual image and request; do not ban typographic, product-themed or
+commercial work globally. Do not use plain author-name queries; author extension
+needs unvalidated `from:`/timeline work.
+Queries discover existing works; they must not prescribe a full composition,
+lighting scheme, material, pose, background or complete scene unless the user
+explicitly requested it. Broad requests leave those open; three directions are
+exploration angles, not fixed slots or hard requirements.
+Choose the second search from the observed cause, not a fixed rotation: switch
+source after X network/page/association failures; change query or direction after
+empty discovery or template rejection; preserve pending candidates and their
+original direction. Record the search `reason` and `change`.
 Canonicalize publisher URLs before duplicate checks, including Behance locale and
-module variants and ArtStation author subdomains. Preserve pending candidates and
-switch sources after reading failures or direction after template rejection.
+module variants and ArtStation author subdomains.
 Count malformed and failed vision calls toward the three-review ceiling; never
 retry provider refusals. Accept only one complete JSON fence before strict parsing.
 Prefer scoped body artwork over social metadata, keeping the two-fetch page ceiling.
 Treat exploration suggestions separately from original user constraints in reviews.
-Record sanitized stage/HTTP evidence and never label unreadable or unsuitable inputs
-as template-unusable.
+Record sanitized stage/HTTP evidence and never label unreadable inputs as
+template-unusable. Mixed failures use a neutral user message.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru

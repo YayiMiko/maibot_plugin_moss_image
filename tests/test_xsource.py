@@ -15,7 +15,14 @@ from moss.references import (
     ReferenceError,
     canonical_page_key,
 )
-from moss.xsource import XReferenceClient, content_classification
+from moss.xsource import XReferenceClient, content_flags
+
+HISTORICAL_PROMPT_POSTS = [
+    "How to create your baroque style portrait: use the tool, add this prompt, preserve the face.",
+    "Baroque candlelight oil painting prompt: preserve identity and create a portrait.",
+    "Prompt: a masterly chiaroscuro oil painting portrait of a young woman.",
+    "Prompt: a classical oil painting portrait of a young woman.",
+]
 
 
 def png_bytes():
@@ -137,22 +144,24 @@ def test_candidate_confirms_same_post_and_prefers_og_media(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("text", "code"),
+    ("text", "expected_flags"),
     [
-        ("Prompt: create a retro anime poster", "unsuitable_content"),
-        ("Buy now. Link in bio.", "unsuitable_content"),
-        ("A product shot of a manhole cover", "unsuitable_content"),
-        ("Pre-order the new character figure", "unsuitable_content"),
+        ("Prompt: create a retro anime poster", ["tutorial_or_template"]),
+        ("Buy now. Link in bio.", ["sales_mention"]),
+        ("A product shot of a manhole cover", ["product_mention"]),
+        ("Pre-order the new character figure", ["sales_mention"]),
     ],
 )
-def test_candidate_rejects_obvious_non_works(monkeypatch, text, code):
+def test_candidate_keeps_prompt_or_sales_text_for_image_review(
+    monkeypatch, text, expected_flags
+):
     http = FakeHTTP([], page_html(), syndication_data(text=text))
     client = run_client(monkeypatch, http)
 
     async def run():
-        with pytest.raises(ReferenceError) as failure:
-            await client.candidate("https://x.com/artist/status/123", 1)
-        assert failure.value.details["code"] == code
+        record, _ = await client.candidate("https://x.com/artist/status/123", 1)
+        assert record["content_flags"] == expected_flags
+        assert record["image_decoded"] is True
 
     __import__("asyncio").run(run())
 
@@ -173,6 +182,20 @@ def test_candidate_keeps_artwork_despite_title_or_ai_tool_mention(monkeypatch, t
         assert record["content_flags"] == (
             ["ai_tool_mention"] if "Midjourney" in text else []
         )
+
+    __import__("asyncio").run(run())
+
+
+@pytest.mark.parametrize("text", HISTORICAL_PROMPT_POSTS)
+def test_historical_prompt_posts_reach_image_review(monkeypatch, text):
+    http = FakeHTTP([], page_html(), syndication_data(text=text))
+    client = run_client(monkeypatch, http)
+
+    async def run():
+        record, _ = await client.candidate("https://x.com/artist/status/123", 1)
+        assert "tutorial_or_template" in record["content_flags"]
+        assert record["image_decoded"] is True
+        assert record["association"]["syndication_id_match"] is True
 
     __import__("asyncio").run(run())
 
@@ -221,14 +244,10 @@ def test_candidate_propagates_page_failure(monkeypatch):
     __import__("asyncio").run(run())
 
 
-def test_content_classification_does_not_exclude_ai_tool_names_alone():
-    assert content_classification("A finished poster made with DALL-E") == (
-        None,
-        ["ai_tool_mention"],
-    )
-    assert content_classification("Prompt: use this template")[0] == (
-        "tutorial_or_template"
-    )
+def test_content_flags_are_hints_only():
+    assert content_flags("A finished poster made with DALL-E") == ["ai_tool_mention"]
+    assert "tutorial_or_template" in content_flags("Prompt: use this template")
+    assert content_flags("How to Train Your Dragon character poster") == []
 
 
 def test_canonical_page_keys_collapse_locale_and_author_subdomains():

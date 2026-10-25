@@ -79,12 +79,6 @@ PRODUCT_MARKERS = (
     "product photo",
     "product shot",
 )
-STRONG_ART_MARKERS = (
-    "poster",
-    "illustration",
-    "key visual",
-    "artwork",
-)
 AI_TOOL_MARKERS = (
     "midjourney",
     "chatgpt",
@@ -134,22 +128,19 @@ def page_markers(body: bytes) -> dict:
     }
 
 
-def content_classification(text: str) -> tuple[str | None, list[str]]:
-    """Reject obvious tutorials/templates/ads; keep AI-tool mentions as flags."""
+def content_flags(text: str) -> list[str]:
+    """Record content hints only; the actual image decides template suitability."""
     normalized = " ".join(text.casefold().split())
     flags = []
     if any(marker in normalized for marker in TUTORIAL_MARKERS):
-        return "tutorial_or_template", ["tutorial_or_template"]
-    has_art = any(marker in normalized for marker in STRONG_ART_MARKERS)
-    if any(marker in normalized for marker in SALES_MARKERS) and not has_art:
-        return "ad_only", ["ad_only"]
-    if any(marker in normalized for marker in PRODUCT_MARKERS) and not has_art:
-        return "product_only", ["product_only"]
-    if any(marker in normalized for marker in AI_TOOL_MARKERS):
-        flags.append("ai_tool_mention")
+        flags.append("tutorial_or_template")
     if any(marker in normalized for marker in SALES_MARKERS):
         flags.append("sales_mention")
-    return None, flags
+    if any(marker in normalized for marker in PRODUCT_MARKERS):
+        flags.append("product_mention")
+    if any(marker in normalized for marker in AI_TOOL_MARKERS):
+        flags.append("ai_tool_mention")
+    return flags
 
 
 class XReferenceClient:
@@ -290,12 +281,7 @@ class XReferenceClient:
                 "association_unavailable", stage="syndication", url=sync_url
             )
         text = str(data.get("text") or "")
-        hard_reason, flags = content_classification(text)
-        if hard_reason:
-            exc = ReferenceError("unsuitable_content", stage="filter", url=canonical)
-            exc.details["filter_reason"] = hard_reason
-            exc.details["content_flags"] = flags
-            raise exc
+        flags = content_flags(text)
         photos = []
         for item in data.get("mediaDetails") or []:
             if not isinstance(item, dict) or item.get("type") != "photo":
@@ -381,7 +367,8 @@ class XReferenceClient:
                 "image_failures": image_failures,
                 "image_origin": chosen_origin,
                 "source_route": "x",
-                "post_text": text[:500],
+                "post_text": text[:1200],
+                "image_decoded": True,
                 "media": [
                     {
                         "media_id": item["media_id"],

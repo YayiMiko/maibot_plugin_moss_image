@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 from moss.aesthetics import Aesthetics, SourceRule
 from moss.commands import parse_command
 from moss.config import MossConfig
+from moss.draw import _second_search_plan, reference_failure_reason
 from moss.draw_models import DrawError
 from moss.references import ReferenceError, cache_reference, normalize_image, safe_http
 
@@ -105,7 +106,7 @@ def draw_setup(plugin, command, monkeypatch):
         state["requests"].append(messages)
         assert "private-test-search-key" not in json.dumps(messages)
         system = messages[0]["content"]
-        if system.startswith("Prepare an image"):
+        if system.startswith("Prepare a discovery"):
             state["brief_calls"] += 1
             brief_input = json.loads(messages[1]["content"])
             original = brief_input["request"]
@@ -126,14 +127,14 @@ def draw_setup(plugin, command, monkeypatch):
                 if state.get("poster")
                 else [],
                 "query": "curated editorial artwork",
-                "design_intent": "Central silhouette with open space",
+                "design_intent": "Editorial portrait poster exploration",
                 "alternatives": [
                     {
                         "query": "geometric expressive design",
-                        "design_intent": "Geometric rhythm and asymmetry",
+                        "design_intent": "Geometric poster exploration",
                     },
                     {
-                        "design_intent": "Cinematic scale and contrast",
+                        "design_intent": "Cinematic poster exploration",
                         "query": "expressive cinematic poster design"
                         if state.get("poster")
                         else "expressive editorial color composition",
@@ -288,6 +289,314 @@ def draw_setup(plugin, command, monkeypatch):
     return state, sources, None
 
 
+HISTORICAL_MIXED_REFERENCES = [
+    *[{"outcome": "unsuitable"} for _ in range(4)],
+    *[{"outcome": "unreadable"} for _ in range(2)],
+]
+
+
+def test_reference_failure_reason_distinguishes_mixed_failures():
+    assert reference_failure_reason([]) == "no_reference_results"
+    assert reference_failure_reason([], True) == "search_unavailable"
+    assert (
+        reference_failure_reason([{"outcome": "unreadable"}, {"outcome": "unreadable"}])
+        == "reference_unreadable"
+    )
+    assert (
+        reference_failure_reason(
+            [{"outcome": "duplicate"}, {"outcome": "incompatible_canvas"}]
+        )
+        == "no_compatible_reference"
+    )
+    assert (
+        reference_failure_reason(HISTORICAL_MIXED_REFERENCES)
+        == "mixed_reference_failure"
+    )
+    assert (
+        reference_failure_reason([{"outcome": "duplicate"}, {"outcome": "unreadable"}])
+        == "mixed_reference_failure"
+    )
+
+
+def test_second_search_plan_uses_failure_cause():
+    assert _second_search_plan("x", True, False, 0, 0, True) == (
+        "publisher",
+        "source",
+        "source_read_failure",
+    )
+    assert _second_search_plan("x", False, False, 2, 0, True) == (
+        "publisher",
+        "source",
+        "source_read_failure",
+    )
+    assert _second_search_plan("x", False, False, 2, 1, True) == (
+        "x",
+        "query",
+        "template_unusable_change_direction",
+    )
+    assert _second_search_plan("x", False, True, 0, 0, True) == (
+        "x",
+        "query",
+        "empty_results_change_query",
+    )
+    assert _second_search_plan("publisher", True, False, 0, 0, False) == (
+        "publisher",
+        "query",
+        "publisher_search_failure_change_query",
+    )
+
+
+def test_draw_brief_prompt_is_discovery_first(
+    plugin, command, draw_setup, comfy_transport
+):
+    state, _, _ = draw_setup
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        system = state["requests"][0][0]["content"]
+        assert "Queries must discover existing works" in system
+        assert "must not prescribe the final composition" in system
+        assert "design_intent is only a short exploration angle" in system
+        assert "game poster and anime poster are examples" in system
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def patterned_png(seed: int = 0) -> bytes:
+    output = io.BytesIO()
+    image = Image.new("RGB", (768, 512), (50 + seed * 40, 80, 120))
+    pen = ImageDraw.Draw(image)
+    for x in range(9):
+        for y in range(8):
+            pen.rectangle(
+                (x * 85, y * 64, x * 85 + 60, y * 64 + 45),
+                fill=(255 if (x * (seed + 1) + y) % 3 else 0, 180, 20),
+            )
+    image.save(output, "PNG")
+    return output.getvalue()
+
+
+def x_page_html(media_id: str) -> bytes:
+    return (
+        '<meta property="og:title" content="X artwork">'
+        f'<meta property="og:image" content="https://pbs.twimg.com/media/{media_id}?format=jpg&amp;name=large">'
+    ).encode()
+
+
+def x_syndication(tweet_id: str, media_id: str) -> bytes:
+    return json.dumps(
+        {
+            "id_str": tweet_id,
+            "text": "Prompt: a complete character poster",
+            "user": {"screen_name": "artist"},
+            "mediaDetails": [
+                {
+                    "type": "photo",
+                    "media_url_https": f"https://pbs.twimg.com/media/{media_id}.jpg",
+                    "sizes": {"large": {"w": 768, "h": 512}},
+                }
+            ],
+        }
+    ).encode()
+
+
+def test_draw_second_search_changes_query_after_template_unusable(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.xsource.X_ENABLED", True)
+    state["reject"] = 1
+    images = {"AAA": patterned_png(0), "BBB": patterned_png(1)}
+    search_calls = {"count": 0}
+
+    def http(url, **kwargs):
+        if "payload" in kwargs:
+            assert kwargs["payload"]["include_domains"] == ["x.com"]
+            search_calls["count"] += 1
+            tweet_id = "123" if search_calls["count"] == 1 else "456"
+            return (
+                url,
+                "application/json",
+                json.dumps(
+                    {"results": [{"url": f"https://x.com/artist/status/{tweet_id}"}]}
+                ).encode(),
+            )
+        if url == "https://x.com/i/status/123":
+            return url, "text/html", x_page_html("AAA")
+        if url == "https://x.com/i/status/456":
+            return url, "text/html", x_page_html("BBB")
+        if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
+            return (
+                url,
+                "application/json",
+                x_syndication("123", "AAA")
+                if "id=123" in url
+                else x_syndication("456", "BBB"),
+            )
+        if "pbs.twimg.com/media/AAA" in url:
+            return url, "image/png", images["AAA"]
+        if "pbs.twimg.com/media/BBB" in url:
+            return url, "image/png", images["BBB"]
+        raise AssertionError(url)
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        discovery = json.loads(
+            (
+                plugin.store.runtime / record["task_id"] / "draw/discovery.json"
+            ).read_text(encoding="utf-8")
+        )
+        searches = discovery["searches"]
+        assert [item["route"] for item in searches] == ["x", "x"]
+        assert searches[0]["query"] != searches[1]["query"]
+        assert searches[1]["change"] == "query"
+        assert searches[1]["reason"] == "template_unusable_change_direction"
+        reviews = json.loads(
+            (plugin.store.runtime / record["task_id"] / "draw/reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert [item["outcome"] for item in reviews] == ["unusable", "usable"]
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_second_search_switches_source_after_x_read_failure(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.xsource.X_ENABLED", True)
+    output = io.BytesIO()
+    Image.new("RGB", (768, 512), "white").save(output, "PNG")
+    image = output.getvalue()
+    queries = []
+
+    def http(url, **kwargs):
+        if "payload" in kwargs:
+            payload = kwargs["payload"]
+            queries.append(payload)
+            if payload["include_domains"] == ["x.com"]:
+                return (
+                    url,
+                    "application/json",
+                    json.dumps(
+                        {"results": [{"url": "https://x.com/artist/status/123"}]}
+                    ).encode(),
+                )
+            return (
+                url,
+                "application/json",
+                json.dumps(
+                    {"results": [{"url": "https://art.example.com/works/0"}]}
+                ).encode(),
+            )
+        if url == "https://x.com/i/status/123":
+            raise ReferenceError("http_status", stage="page", url=url, status=404)
+        if url == "https://art.example.com/works/0":
+            return (
+                url,
+                "text/html",
+                b'<meta property="og:title" content="Art">'
+                b'<meta property="og:image" content="https://art.example.com/image0.png">',
+            )
+        if url == "https://art.example.com/image0.png":
+            return url, "image/png", image
+        raise AssertionError(url)
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        discovery = json.loads(
+            (
+                plugin.store.runtime / record["task_id"] / "draw/discovery.json"
+            ).read_text(encoding="utf-8")
+        )
+        searches = discovery["searches"]
+        assert [item["route"] for item in searches] == ["x", "publisher"]
+        assert searches[0]["query"] == searches[1]["query"]
+        assert searches[1]["change"] == "source"
+        assert searches[1]["reason"] == "source_read_failure"
+        assert queries[0]["query"] == queries[1]["query"]
+        assert "art.example.com" in queries[1]["include_domains"]
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_second_search_changes_query_after_empty_x_search(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.xsource.X_ENABLED", True)
+    output = io.BytesIO()
+    Image.new("RGB", (768, 512), "white").save(output, "PNG")
+    image = output.getvalue()
+    search_calls = {"count": 0}
+
+    def http(url, **kwargs):
+        if "payload" in kwargs:
+            assert kwargs["payload"]["include_domains"] == ["x.com"]
+            search_calls["count"] += 1
+            results = (
+                []
+                if search_calls["count"] == 1
+                else [{"url": "https://x.com/artist/status/456"}]
+            )
+            return url, "application/json", json.dumps({"results": results}).encode()
+        if url == "https://x.com/i/status/456":
+            return url, "text/html", x_page_html("BBB")
+        if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
+            return url, "application/json", x_syndication("456", "BBB")
+        if "pbs.twimg.com/media/" in url:
+            return url, "image/png", image
+        raise AssertionError(url)
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        discovery = json.loads(
+            (
+                plugin.store.runtime / record["task_id"] / "draw/discovery.json"
+            ).read_text(encoding="utf-8")
+        )
+        searches = discovery["searches"]
+        assert [item["route"] for item in searches] == ["x", "x"]
+        assert searches[0]["query"] != searches[1]["query"]
+        assert searches[1]["change"] == "query"
+        assert searches[1]["reason"] == "empty_results_change_query"
+        assert searches[0]["accepted"] == 0
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
 def test_draw_first_eligible_submits_exactly_once_and_redacts_config(
     plugin, command, draw_setup, comfy_transport
 ):
@@ -365,7 +674,7 @@ def test_draw_uses_x_first_and_submits_one_association(
                 json.dumps(
                     {
                         "id_str": "123",
-                        "text": "A complete character poster",
+                        "text": "Prompt: a complete character poster",
                         "user": {"screen_name": "artist"},
                         "mediaDetails": [
                             {
@@ -400,6 +709,8 @@ def test_draw_uses_x_first_and_submits_one_association(
             (directory / "references.json").read_text(encoding="utf-8")
         )
         assert references[0]["source_route"] == "x"
+        assert references[0]["content_flags"] == ["tutorial_or_template"]
+        assert references[0]["image_decoded"] is True
         reviews = json.loads((directory / "reviews.json").read_text(encoding="utf-8"))
         assert [item["outcome"] for item in reviews] == ["usable"]
         assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
@@ -925,20 +1236,15 @@ def test_draw_empty_search_is_not_reported_as_aesthetic_failure(
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("cause", ["page_403", "rejected"])
-def test_draw_recovers_original_pool_and_direction_after_empty_supplement(
-    plugin, command, draw_setup, comfy_transport, monkeypatch, cause
+def test_draw_uses_pending_page_before_supplement_search(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
     monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
     state["result_sets"] = [
-        [{"url": f"https://art.example.com/works/{i}"} for i in range(2)],
-        [],
+        [{"url": f"https://art.example.com/works/{i}"} for i in range(2)]
     ]
-    if cause == "page_403":
-        state["page_failures"] = ["https://art.example.com/works/0"]
-    else:
-        state["reject"] = 1
+    state["page_failures"] = ["https://art.example.com/works/0"]
 
     async def run():
         await plugin.on_load()
@@ -951,27 +1257,22 @@ def test_draw_recovers_original_pool_and_direction_after_empty_supplement(
         assert state["page_reads"] == [
             f"https://art.example.com/works/{i}" for i in range(2)
         ]
-        assert state["searches"] == 2
-        if cause == "page_403":
-            assert state["queries"][0]["query"] == state["queries"][1]["query"]
-            assert "art.example.com" not in state["queries"][1]["include_domains"]
-            assert state["reviews"] == 1
-        else:
-            assert state["queries"][0]["query"] != state["queries"][1]["query"]
-            assert state["review_briefs"][0] == state["review_briefs"][1]
-        assert state["review_briefs"][-1]["query"] == state["queries"][0]["query"]
+        assert state["searches"] == 1 and state["reviews"] == 1
         assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
         await plugin.on_unload()
 
     asyncio.run(run())
 
 
-def test_draw_search_outage_does_not_discard_pending_work(
+def test_draw_keeps_pending_direction_after_template_rejection(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
-    state.update(search_error=2, page_failures=["https://art.example.com/works/0"])
     monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
+    state["result_sets"] = [
+        [{"url": f"https://art.example.com/works/{i}"} for i in range(2)]
+    ]
+    state["reject"] = 1
 
     async def run():
         await plugin.on_load()
@@ -981,8 +1282,39 @@ def test_draw_search_outage_does_not_discard_pending_work(
             next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
         )
         assert record["status"] == "sent", record
-        assert state["searches"] == 2 and state["reviews"] == 1
+        assert state["searches"] == 1 and state["reviews"] == 2
+        assert state["review_briefs"][0] == state["review_briefs"][1]
         assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_search_outage_after_template_rejection_keeps_evidence(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
+    state["result_sets"] = [[{"url": "https://art.example.com/works/0"}]]
+    state["reject"] = 1
+    state["search_error"] = 2
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["error_kind"] == "no_usable_template"
+        assert state["searches"] == 2 and state["reviews"] == 1
+        assert not comfy_transport
+        reviews = json.loads(
+            (plugin.store.runtime / record["task_id"] / "draw/reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert [item["outcome"] for item in reviews] == ["unusable"]
         await plugin.on_unload()
 
     asyncio.run(run())
