@@ -33,6 +33,28 @@ async def fetch_public(url, **kwargs):
     )
 
 
+def display_url(url: str) -> str:
+    """Keep a public resource locator without credentials, queries or fragments."""
+    try:
+        parsed = public_url(url)
+        return urlunsplit(parsed._replace(query="", fragment=""))
+    except (DrawError, ValueError, TypeError):
+        return "<invalid-url>"
+
+
+class ReferenceError(DrawError):
+    """Carry bounded technical evidence without response bodies or authentication."""
+
+    def __init__(self, code: str, *, stage="fetch", url="", status=None):
+        super().__init__("reference_unreadable")
+        self.details = {
+            "stage": stage,
+            "code": code,
+            "url": display_url(url),
+            "http_status": status,
+        }
+
+
 def public_url(url: str):
     """Validate URL syntax; actual DNS and peer checks happen on every connection."""
     parsed = urlsplit(url)
@@ -51,7 +73,7 @@ def public_url(url: str):
     return parsed
 
 
-def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE):
+def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE, stage="fetch"):
     """Fetch bounded bytes with pinned public DNS, verified TLS and no proxies.
 
     Args:
@@ -59,6 +81,7 @@ def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE):
         payload: Optional JSON payload, permitted only at the fixed Tavily endpoint.
         key: Authentication sent only to the fixed API, never to redirect targets.
         limit: Maximum response bytes, enforced even without Content-Length.
+        stage: Internal search/page/image stage for sanitized technical evidence.
 
     Returns:
         Final URL, media type and bounded response bytes.
@@ -78,7 +101,7 @@ def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE):
             if not addresses or any(
                 not ipaddress.ip_address(item[4][0]).is_global for item in addresses
             ):
-                raise DrawError("reference_unreadable")
+                raise ReferenceError("non_public_destination", stage=stage, url=url)
             # Connect to the already validated numeric address, never resolve twice.
             address = addresses[0][4][0]
             connection = http.client.HTTPSConnection(parsed.hostname, timeout=8)
@@ -88,7 +111,7 @@ def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE):
                     if ipaddress.ip_address(
                         raw.getpeername()[0]
                     ) != ipaddress.ip_address(address):
-                        raise DrawError("reference_unreadable")
+                        raise ReferenceError("peer_mismatch", stage=stage, url=url)
                     connection.sock = ssl.create_default_context().wrap_socket(
                         raw, server_hostname=parsed.hostname
                     )
@@ -118,24 +141,42 @@ def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE):
                 response = connection.getresponse()
                 if response.status in {301, 302, 303, 307, 308}:
                     if payload is not None or redirect == 3:
-                        raise DrawError("reference_unreadable")
+                        raise ReferenceError(
+                            "redirect_rejected",
+                            stage=stage,
+                            url=url,
+                            status=response.status,
+                        )
                     url = urljoin(url, response.getheader("Location") or "")
                     continue
-                if (
-                    response.status != 200
-                    or response.getheader("Content-Encoding", "identity") != "identity"
-                ):
-                    raise DrawError("reference_unreadable")
+                if response.status != 200:
+                    raise ReferenceError(
+                        "http_status", stage=stage, url=url, status=response.status
+                    )
+                if response.getheader("Content-Encoding", "identity") != "identity":
+                    raise ReferenceError(
+                        "unsupported_encoding",
+                        stage=stage,
+                        url=url,
+                        status=response.status,
+                    )
                 length = response.getheader("Content-Length")
                 if length is not None and (
                     not length.isdecimal() or int(length) > limit
                 ):
-                    raise DrawError("reference_unreadable")
+                    raise ReferenceError(
+                        "response_too_large",
+                        stage=stage,
+                        url=url,
+                        status=response.status,
+                    )
                 chunks, size = [], 0
                 while True:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        raise DrawError("reference_unreadable")
+                        raise ReferenceError(
+                            "timeout", stage=stage, url=url, status=response.status
+                        )
                     secured.settimeout(min(5, remaining))
                     chunk = response.read1(min(65536, limit + 1 - size))
                     if not chunk:
@@ -143,7 +184,12 @@ def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE):
                     chunks.append(chunk)
                     size += len(chunk)
                     if size > limit:
-                        raise DrawError("reference_unreadable")
+                        raise ReferenceError(
+                            "response_too_large",
+                            stage=stage,
+                            url=url,
+                            status=response.status,
+                        )
                 return (
                     url,
                     response.getheader("Content-Type", "").split(";")[0].lower(),
@@ -151,11 +197,22 @@ def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE):
                 )
             finally:
                 connection.close()
-    except DrawError:
+    except ReferenceError:
         raise
-    except Exception:
-        raise DrawError("reference_unreadable") from None
-    raise DrawError("reference_unreadable")
+    except DrawError:
+        raise ReferenceError("unsafe_url", stage=stage, url=url) from None
+    except Exception as exc:
+        code = (
+            "dns_failed"
+            if isinstance(exc, socket.gaierror)
+            else "timeout"
+            if isinstance(exc, TimeoutError)
+            else "tls_failed"
+            if isinstance(exc, ssl.SSLError)
+            else "connection_failed"
+        )
+        raise ReferenceError(code, stage=stage, url=url) from None
+    raise ReferenceError("redirect_rejected", stage=stage, url=url)
 
 
 class WorkPage(HTMLParser):
@@ -225,6 +282,7 @@ class ReferenceClient:
         self.config, self.sources = config, sources
         self.calls, self.pages = 0, 0
         self.seen = set()
+        self.searches = []
 
     async def search(self, query: str) -> list[str]:
         """Return only source-scoped work pages; aggregate image URLs are not proof."""
@@ -243,6 +301,15 @@ class ReferenceClient:
         ):
             raise DrawError("invalid_export")
         self.calls += 1
+        trace = {
+            "query": query,
+            "outcome": "failed",
+            "returned": 0,
+            "accepted": 0,
+            "rejected": 0,
+            "pages": [],
+        }
+        self.searches.append(trace)
         try:
             _, _, body = await fetch_public(
                 "https://api.tavily.com/search",
@@ -260,46 +327,82 @@ class ReferenceClient:
                 },
                 key=self.config.tavily_api_key,
                 limit=512 * 1024,
+                stage="search",
             )
             result = json.loads(body)
             pages = []
-            for item in result.get("results", [])[:5]:
-                url = item.get("url", "")
-                parsed = public_url(url)
+            results = result.get("results", [])
+            if not isinstance(results, list):
+                raise ValueError("Invalid search results")
+            trace["returned"] = len(results[:5])
+            for item in results[:5]:
+                url = item.get("url", "") if isinstance(item, dict) else ""
+                try:
+                    parsed = public_url(url)
+                except (ValueError, TypeError, DrawError):
+                    trace["rejected"] += 1
+                    continue
                 if (
                     any(source.matches(parsed) for source in self.sources)
                     and url not in self.seen
+                    and url not in pages
                 ):
-                    self.seen.add(url)
                     pages.append(url)
+                else:
+                    trace["rejected"] += 1
+            trace.update(
+                outcome="ok",
+                accepted=len(pages),
+                pages=[display_url(page) for page in pages],
+            )
             return pages
         except asyncio.CancelledError:
             raise
+        except ReferenceError as exc:
+            trace["failure"] = exc.details
+            raise DrawError("search_unavailable") from None
         except Exception:
+            trace["failure"] = {"stage": "search", "code": "invalid_response"}
             raise DrawError("search_unavailable") from None
 
     async def candidate(self, page_url: str, number: int):
         """Confirm a page-image association using the publisher's own metadata."""
         self.pages += 1
-        page_url, media, body = await fetch_public(page_url, limit=512 * 1024)
+        self.seen.add(page_url)
+        page_url, media, body = await fetch_public(
+            page_url, limit=512 * 1024, stage="page"
+        )
         parsed = public_url(page_url)
         source = next(
             (source for source in self.sources if source.matches(parsed)), None
         )
-        if source is None or media not in {"text/html", "application/xhtml+xml"}:
-            raise DrawError("reference_unreadable")
+        if source is None:
+            raise ReferenceError(
+                "source_not_allowed", stage="page", url=page_url, status=200
+            )
+        if media not in {"text/html", "application/xhtml+xml"}:
+            raise ReferenceError(
+                "unexpected_page_type", stage="page", url=page_url, status=200
+            )
         page = WorkPage(body.decode("utf-8", errors="replace"))
         if not page.images or not page.title:
-            raise DrawError("reference_unreadable")
+            raise ReferenceError(
+                "missing_artwork_metadata", stage="page", url=page_url, status=200
+            )
         image_url = urljoin(page_url, page.images[0])
-        image_url, _, content = await fetch_public(image_url)
-        normalized, width, height, signature = await asyncio.to_thread(
-            normalize_image, content
-        )
+        image_url, _, content = await fetch_public(image_url, stage="image")
+        try:
+            normalized, width, height, signature = await asyncio.to_thread(
+                normalize_image, content
+            )
+        except DrawError:
+            raise ReferenceError(
+                "invalid_image", stage="decode", url=image_url, status=200
+            ) from None
         record = {
             "id": f"candidate-{number}",
-            "page": urlunsplit(parsed._replace(query="", fragment="")),
-            "image": urlunsplit(public_url(image_url)._replace(query="", fragment="")),
+            "page": display_url(page_url),
+            "image": display_url(image_url),
             "title": page.title,
             "author": page.author,
             "source_kind": source.kind,

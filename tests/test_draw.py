@@ -15,7 +15,7 @@ from moss.aesthetics import Aesthetics, SourceRule
 from moss.commands import parse_command
 from moss.config import MossConfig
 from moss.draw_models import DrawError
-from moss.references import cache_reference, normalize_image, safe_http
+from moss.references import ReferenceError, cache_reference, normalize_image, safe_http
 
 
 @pytest.fixture
@@ -102,7 +102,9 @@ def draw_setup(plugin, command, monkeypatch):
                 "application/json",
                 json.dumps(
                     {
-                        "results": [
+                        "results": []
+                        if state.get("empty_results")
+                        else [
                             {"url": f"https://art.example.com/works/{i}"}
                             for i in range(3)
                         ],
@@ -118,7 +120,12 @@ def draw_setup(plugin, command, monkeypatch):
             )
         state["downloads"].append(url)
         if state["broken"]:
-            raise DrawError("reference_unreadable")
+            raise ReferenceError(
+                "http_status",
+                stage="image",
+                url=url + "?token=private-signed-token",
+                status=403,
+            )
         return url, "image/png", artworks[int(url[-5])]
 
     async def generate(messages, **kwargs):
@@ -127,7 +134,9 @@ def draw_setup(plugin, command, monkeypatch):
         system = messages[0]["content"]
         if system.startswith("Prepare an image"):
             state["brief_calls"] += 1
-            original = json.loads(messages[1]["content"])["request"]
+            brief_input = json.loads(messages[1]["content"])
+            original = brief_input["request"]
+            wide = len(brief_input["categories"]) > 1 and not state.get("poster")
             response = {
                 "category": "poster" if state.get("poster") else "illustration",
                 "constraints": [
@@ -140,9 +149,29 @@ def draw_setup(plugin, command, monkeypatch):
                     if source in original
                 ],
                 "creative_freedom": "setting and framing",
+                "reference_requirements": [
+                    {"source": "海报", "requirement": "poster design"}
+                ]
+                if state.get("poster")
+                else [],
                 "query": "curated editorial artwork",
-                "fallback_query": "excellent visual composition",
+                "alternatives": [
+                    {
+                        "category": "poster"
+                        if state.get("poster")
+                        else "poster"
+                        if wide
+                        else "illustration",
+                        "query": "expressive cinematic poster design"
+                        if wide or state.get("poster")
+                        else "expressive editorial color composition",
+                    }
+                ],
             }
+            if state.get("identity_locked") and state["brief_calls"] == 1:
+                response["query"] = (
+                    "Wuthering Waves Cartethyia official character art illustration"
+                )
             if state["brief_calls"] <= state["brief_bad"]:
                 response["constraints"].append(
                     {
@@ -245,16 +274,15 @@ def draw_setup(plugin, command, monkeypatch):
             }
             if "水彩画" in payload["request"]:
                 response["draft"]["caption"] += " Watercolor illustration."
-            if state.get("poster"):
+            if payload["brief"]["category"] == "poster":
+                summary = response["draft"]["caption"]
                 response.update(mode="layout", visible_texts=payload["fixed_texts"])
                 response["draft"] = {
                     "width": payload["width"],
                     "height": payload["height"],
                     "bbox_coord_space": "abs",
                     "bbox_format": "xyxy",
-                    "summary": {
-                        "caption": "A single girl in a blue and cream composition with negative space."
-                    },
+                    "summary": {"caption": summary},
                     "items": [
                         {
                             "label": "character",
@@ -362,6 +390,29 @@ def test_draw_never_lowers_quality_or_resubmits_after_failure(
         await plugin.handle_moss(**command)
         await asyncio.gather(*list(plugin.jobs.values()))
         assert not comfy_transport
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert (
+            record["error_kind"]
+            == {
+                "reject": "no_eligible_reference",
+                "broken": "reference_unreadable",
+                "blocked": "vision_blocked",
+            }[failure]
+        )
+        if failure == "broken":
+            records = json.loads(
+                (
+                    plugin.store.runtime / record["task_id"] / "draw/references.json"
+                ).read_text(encoding="utf-8")
+            )
+            assert all(
+                item["failure"]["http_status"] == 403
+                and item["failure"]["stage"] == "image"
+                for item in records
+            )
+            assert "private-signed-token" not in json.dumps(records)
         plugin.ctx.send.image.assert_not_awaited()
         plugin.ctx.send.text.assert_awaited_once()
         assert len(state["downloads"]) == (1 if failure == "blocked" else 3)
@@ -377,6 +428,8 @@ def test_draw_never_lowers_quality_or_resubmits_after_failure(
 def test_draw_verified_identity_is_in_final_prompt_without_expansion(
     plugin, command, draw_setup, comfy_transport
 ):
+    state, _, _ = draw_setup
+    state["identity_locked"] = True
     plugin.config.planning.danbooru_enabled = True
     command["text"] = command["text"].replace("少女", "卡缇希娅")
 
@@ -403,7 +456,17 @@ def test_draw_verified_identity_is_in_final_prompt_without_expansion(
         prompt = submitted["prompt"]["4"]["inputs"]["text"]
         assert "卡缇希娅 = cartethyia_(wuthering_waves)" in prompt
         assert prompt.count("cartethyia_(wuthering_waves)") == 1
-        assert plugin.ctx.llm.generate.await_count == 4
+        assert plugin.ctx.llm.generate.await_count == 5 and state["brief_calls"] == 2
+        discovery = json.loads(
+            (
+                plugin.store.runtime / record["task_id"] / "draw/discovery.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert all(
+            "cartethyia" not in search["query"].casefold()
+            and "wuthering" not in search["query"].casefold()
+            for search in discovery["searches"]
+        )
         await plugin.on_unload()
 
     asyncio.run(run())
@@ -699,6 +762,74 @@ def test_draw_preparation_deadline_stops_before_gpu(
     asyncio.run(run())
 
 
+def test_open_draw_randomizes_design_direction_before_search(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, profile, _ = draw_setup
+    plugin.config.draw.use_profile = False
+    monkeypatch.setattr(
+        "moss.aesthetics.BUILTIN_SOURCES",
+        tuple(SourceRule.model_validate(item) for item in profile["sources"]),
+    )
+    seeds = iter([0, 1])
+    monkeypatch.setattr("moss.draw.secrets.randbits", lambda _: next(seeds))
+    command["text"] = "/moss 抽卡 卡缇希娅"
+
+    async def run():
+        await plugin.on_load()
+        for index in range(2):
+            command["message"]["message_id"] = f"draw-direction-{index}"
+            await plugin.handle_moss(**command)
+            await asyncio.gather(*list(plugin.jobs.values()))
+        briefs = []
+        for path in plugin.store.records.glob("*.json"):
+            record = json.loads(path.read_text(encoding="utf-8"))
+            assert record["status"] == "sent", record
+            directory = plugin.store.runtime / record["task_id"] / "draw"
+            briefs.append(
+                json.loads((directory / "brief.json").read_text(encoding="utf-8"))
+            )
+        assert {brief["category"] for brief in briefs} == {"poster", "illustration"}
+        assert all(
+            brief["reference_requirements"] == [] and "卡缇希娅" not in brief["query"]
+            for brief in briefs
+        )
+        assert state["searches"] == 2 and len(state["downloads"]) == 2
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 2
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_empty_search_is_not_reported_as_aesthetic_failure(
+    plugin, command, draw_setup, comfy_transport
+):
+    state, _, _ = draw_setup
+    state["empty_results"] = True
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["error_kind"] == "no_reference_results"
+        assert state["searches"] == 2 and state["reviews"] == 0 and not comfy_transport
+        discovery = json.loads(
+            (
+                plugin.store.runtime / record["task_id"] / "draw/discovery.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert all(
+            search["returned"] == search["accepted"] == 0
+            for search in discovery["searches"]
+        )
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
 def test_http_pins_peer_checks_redirect_and_never_forwards_search_key(monkeypatch):
     from moss import references
 
@@ -767,3 +898,14 @@ def test_http_pins_peer_checks_redirect_and_never_forwards_search_key(monkeypatc
     assert [host for host, _, headers in calls if headers.get("Authorization")] == [
         "api.tavily.com"
     ]
+    responses.append(response(403))
+    with pytest.raises(ReferenceError) as failure:
+        safe_http(
+            "https://public.example.com/image.jpg?token=private-signed-token",
+            stage="image",
+        )
+    assert (
+        failure.value.details["http_status"] == 403
+        and failure.value.details["stage"] == "image"
+    )
+    assert failure.value.details["url"] == "https://public.example.com/image.jpg"

@@ -45,6 +45,18 @@ BUILTIN_SOURCES = (
         kind="publisher_page",
         evidence="Behance project publication path; page-image association checked per request, authorship and awards unverified.",
     ),
+    SourceRule(
+        domain="www.pentagram.com",
+        path_prefix="/work/",
+        kind="publisher_page",
+        evidence="Pentagram published design projects; per-page image association required, awards unverified.",
+    ),
+    SourceRule(
+        domain="www.itsnicethat.com",
+        path_prefix="/articles/",
+        kind="publisher_page",
+        evidence="It's Nice That published creative projects; per-page image association required, authorship and awards unverified.",
+    ),
 )
 
 
@@ -203,7 +215,7 @@ class Aesthetics:
                 "text": json.dumps(
                     {
                         "request": request.prompt,
-                        "brief": brief.model_dump(),
+                        "brief": brief.model_dump(exclude={"alternatives"}),
                         "candidate_id": record["id"],
                         "canvas": {"width": request.width, "height": request.height}
                         if request.canvas_explicit

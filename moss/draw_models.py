@@ -26,12 +26,18 @@ class Constraint(StrictRecord):
     requirement: str = Field(min_length=1, max_length=2048)
 
 
-class Brief(StrictRecord):
+class SearchDirection(StrictRecord):
+    """One visual exploration direction, independent of target character identity."""
+
     category: Literal["poster", "illustration"]
-    constraints: list[Constraint] = Field(max_length=24)
-    creative_freedom: str = Field(min_length=1, max_length=2048)
     query: str = Field(min_length=1, max_length=300)
-    fallback_query: str = Field(min_length=1, max_length=300)
+
+
+class Brief(SearchDirection):
+    constraints: list[Constraint] = Field(max_length=24)
+    reference_requirements: list[Constraint] = Field(max_length=12)
+    creative_freedom: str = Field(min_length=1, max_length=2048)
+    alternatives: list[SearchDirection] = Field(min_length=1, max_length=3)
 
 
 class Blueprint(StrictRecord):

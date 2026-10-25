@@ -21,6 +21,10 @@ Draw always excludes common style presets and fixed quality prefixes, including
 the all-style setting; preserve visual styles explicitly written in its request.
 Brief constraints must quote original user spans only. Brief and export share one
 bounded structural correction; provider refusal never triggers that correction.
+Keep target identity separate from reference discovery. Open draws randomize
+multiple visual directions before search; explicit reference themes stay grounded
+in original user spans. Keep the shared two-search/three-candidate limits. Record
+sanitized stage/HTTP evidence and never label unreadable inputs as aesthetic rejects.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru
