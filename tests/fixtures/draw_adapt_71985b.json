@@ -1,0 +1,143 @@
+{
+  "keep": [
+    "wide landscape key art composition",
+    "prominent hero figure right of center with diagonal glowing blade",
+    "giant celestial body in upper right sky",
+    "Gothic spires framing horizon and left background",
+    "colossal crowned statue/deity on upper left",
+    "smaller companion figures flanking protagonist",
+    "deep midnight blue, charcoal black, glowing crimson, pale moonlight silver, starlight white palette",
+    "volumetric lighting, particle embers, cinematic matte painting detail",
+    "high-contrast glowing crimson effects anchoring center against dark gothic silhouettes",
+    "massive upper celestial object balancing the composition"
+  ],
+  "replace": [
+    "armored hero with sword replaced by Sample Hero (样例角色) from Sample Series",
+    "source title 'SAMPLE//TITLE' replaced with original key-art lettering",
+    "source tagline, platform icons, PEGI box, edition plaque, legal footer replaced with original marketing copy"
+  ],
+  "remove": [
+    "title text 'SAMPLE//TITLE'",
+    "source tagline",
+    "PS5, PC, Steam and Epic platform icons",
+    "PEGI rating box",
+    "edition plaque",
+    "copyright legal footer",
+    "any source person names or signatures"
+  ],
+  "recompose": [
+    "typography rebuilt as an original serif game title on the left with secondary slogans and launch date across the lower thirds",
+    "hero blade angle redirected to lead the eye toward the new bottom-left text cluster"
+  ],
+  "bindings": [
+    {
+      "name": "样例角色",
+      "item_index": 0
+    }
+  ],
+  "visible_texts": [
+    "SAMPLE//TITLE",
+    "Sample Series",
+    "Coming 2025"
+  ],
+  "mode": "layout",
+  "draft": {
+    "width": 1360,
+    "height": 768,
+    "bbox_coord_space": "abs",
+    "bbox_format": "xyxy",
+    "summary": {
+      "meta": [
+        "fantasy key art",
+        "digital anime illustration"
+      ],
+      "canvas": "single",
+      "caption": "Wide cinematic anime-fantasy key art in deep midnight blue, charcoal black, glowing crimson, pale moonlight silver and starlight white. Sample Hero, a long-haired blonde elf-eared woman with blue eyes, stands right of center in ornate armor, holding a diagonal glowing crimson blade that sweeps toward the lower-left text cluster. A colossal crowned celestial deity looms in the upper-left sky, a giant moon fills the upper right, and Gothic spires frame the dark horizon. Smaller companion silhouettes flank her, with volumetric light, drifting embers and matte-painting detail. Original serif title lettering sits on the left with secondary copy and a launch date across the lower thirds."
+    },
+    "items": [
+      {
+        "label": "character",
+        "caption": "Sample Hero from Sample Series: a slender young woman with long flowing blonde hair, pointed elf ears and blue eyes, wearing ornate pale-and-crimson fantasy armor with flowing fabric, standing in a confident three-quarter pose and holding a long glowing crimson blade angled down toward the lower left.",
+        "bbox": [
+          700,
+          180,
+          1080,
+          740
+        ]
+      },
+      {
+        "label": "object",
+        "caption": "A colossal crowned deity statue of pale stone wreathed in moonlight, its head and shoulders filling the upper-left sky above the spires, half veiled in shadow.",
+        "bbox": [
+          60,
+          20,
+          560,
+          420
+        ]
+      },
+      {
+        "label": "object",
+        "caption": "A vast luminous moon with soft silver halo and drifting clouds occupying the upper-right sky.",
+        "bbox": [
+          960,
+          0,
+          1360,
+          300
+        ]
+      },
+      {
+        "label": "object",
+        "caption": "Dark Gothic cathedral spires and jagged architecture silhouetted along the horizon and left background, with faint crimson embers glowing between them.",
+        "bbox": [
+          0,
+          380,
+          700,
+          768
+        ]
+      },
+      {
+        "label": "character",
+        "caption": "Two small companion figures in dark cloaks standing at a distance flanking the hero, rendered as soft silhouettes against the glowing crimson haze.",
+        "bbox": [
+          560,
+          520,
+          720,
+          700
+        ]
+      },
+      {
+        "label": "text",
+        "caption": "Large elegant serif title in pale moonlight silver with subtle crimson glow, set on the left above the lower third.",
+        "text": "SAMPLE//TITLE",
+        "bbox": [
+          60,
+          300,
+          620,
+          400
+        ]
+      },
+      {
+        "label": "text",
+        "caption": "Smaller clean sans-serif secondary line in starlight white beneath the title.",
+        "text": "Sample Series",
+        "bbox": [
+          60,
+          420,
+          400,
+          460
+        ]
+      },
+      {
+        "label": "text",
+        "caption": "Compact launch-date line in muted silver along the bottom-left lower third.",
+        "text": "Coming 2025",
+        "bbox": [
+          60,
+          690,
+          300,
+          730
+        ]
+      }
+    ]
+  }
+}

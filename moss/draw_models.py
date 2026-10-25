@@ -119,16 +119,16 @@ class Binding(StrictRecord):
 
 
 class Adaptation(StrictRecord):
-    """Export envelope checked before its official draft is compiled."""
+    """Export envelope checked before its official draft is compiled.
 
-    keep: list[str] = Field(min_length=1, max_length=12)
-    replace: list[str] = Field(max_length=12)
-    remove: list[str] = Field(max_length=12)
-    recompose: list[str] = Field(max_length=12)
-    constraint_sources: list[str] = Field(max_length=24)
-    constraint_renderings: list[str] = Field(max_length=24)
-    design_coverage: list[int] = Field(max_length=6)
-    design_renderings: list[str] = Field(max_length=6)
+    ``keep``/``replace``/``remove``/``recompose`` are diagnostics only. They do
+    not prove that the draft implements a requirement, so they are not gates.
+    """
+
+    keep: list[str] = Field(default_factory=list, max_length=12)
+    replace: list[str] = Field(default_factory=list, max_length=12)
+    remove: list[str] = Field(default_factory=list, max_length=12)
+    recompose: list[str] = Field(default_factory=list, max_length=12)
     bindings: list[Binding] = Field(max_length=8)
     visible_texts: list[str] = Field(max_length=12)
     mode: Literal["caption", "layout"]

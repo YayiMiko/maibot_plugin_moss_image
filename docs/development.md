@@ -20,8 +20,11 @@ redaction and public-only fetching. See aesthetic-draw.md. Real model/image
 acceptance remains separate from offline checks.
 Draw always excludes common style presets and fixed quality prefixes, including
 the all-style setting; preserve visual styles explicitly written in its request.
-Brief constraints must quote original user spans only. Brief and export share one
-bounded structural correction; provider refusal never triggers that correction.
+Brief constraints must quote original user spans only. Brief and export each get at
+most one bounded structural correction, still inside the shared model-call budget and
+prepare deadline; provider refusal never triggers a correction.
+Model-authored keep/replace/remove/recompose or coverage notes are diagnostics, not
+proof of implementation; never use self-certifying prose as a generation gate.
 Keep target identity separate from reference discovery. Open draws randomize
 three visual directions before search without category quotas; explicit reference
 themes stay grounded in original user spans. Keep two searches and separate page/
@@ -53,6 +56,13 @@ Prefer scoped body artwork over social metadata, keeping the two-fetch page ceil
 Treat exploration suggestions separately from original user constraints in reviews.
 Record sanitized stage/HTTP evidence and never label unreadable inputs as
 template-unusable. Mixed failures use a neutral user message.
+Draw export may reject only objective structure, official compilation, verified
+identity binding, explicit user text/count and canvas errors; never require model
+self-certifying prose. Do not invent release dates, prices, awards, sales, platform
+support or endorsements; remove source facts unless the user supplied them, while
+retaining typography hierarchy without blanking all text.
+Record a bounded export-failure category, whether a repair was attempted and why it
+was skipped; never fabricate a provider refusal for budget exhaustion.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru

@@ -180,8 +180,10 @@ class TemplateReviewer:
             "If template_usable is false, blueprint must be null and blocking_issues must explain the concrete blocker. "
             "has_target_subject is an observation only and never a veto. required_replacements are not vetoes. "
             "Do not pretend the target character is present. "
-            "Never invent unreadable lettering, identities, authors, dates or sources. Return one bare JSON object, "
-            "starting with { and ending with }, with no Markdown fences or explanation, matching: "
+            "Never invent unreadable lettering, identities, authors, dates or sources. "
+            "Return one instance object containing only the schema fields. Do not copy the schema itself; "
+            "never include $defs, properties, required, title, type or other schema keywords. "
+            "Return one bare JSON object, starting with { and ending with }, with no Markdown fences or explanation, matching: "
             + json.dumps(TemplateReview.model_json_schema())
         )
         try:

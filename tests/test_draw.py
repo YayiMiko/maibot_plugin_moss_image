@@ -223,23 +223,6 @@ def draw_setup(plugin, command, monkeypatch):
                 "replace": ["Target character"],
                 "remove": ["Source identity"],
                 "recompose": [],
-                "constraint_sources": [
-                    item["source"] for item in payload["brief"]["constraints"]
-                ],
-                "constraint_renderings": [
-                    "single girl"
-                    if item["source"] == "单人"
-                    else "Watercolor illustration"
-                    if item["source"] == "水彩画"
-                    else "No lettering"
-                    for item in payload["brief"]["constraints"]
-                ],
-                "design_coverage": [0, 1, 2],
-                "design_renderings": [
-                    "single girl",
-                    "negative space",
-                    "blue and cream",
-                ],
                 "bindings": [
                     {"name": names[0], "item_index": None}
                     for names in payload["identity_groups"].values()
@@ -280,8 +263,10 @@ def draw_setup(plugin, command, monkeypatch):
                         ],
                     ],
                 }
-            if state["repair"] and "\nRepair only" not in messages[1]["content"]:
-                response["constraint_sources"] = []
+            if state.get("export_bad"):
+                response["visible_texts"] = ["wrong"]
+            elif state["repair"] and "\nRepair only" not in messages[1]["content"]:
+                response["visible_texts"] = ["wrong"]
         return {"success": True, "response": json.dumps(response)}
 
     monkeypatch.setattr("moss.references.safe_http", http)
@@ -360,6 +345,14 @@ def test_draw_brief_prompt_is_discovery_first(
         assert "must not prescribe the final composition" in system
         assert "design_intent is only a short exploration angle" in system
         assert "game poster and anime poster are examples" in system
+        adaptation = next(
+            messages[0]["content"]
+            for messages in state["requests"]
+            if "DRAW ADAPTATION" in messages[0]["content"]
+        )
+        assert "Do not invent release dates" in adaptation
+        assert "do not blank all poster text" in adaptation
+        assert "not a copy of the schema" in adaptation
         await plugin.on_unload()
 
     asyncio.run(run())
@@ -724,7 +717,7 @@ def test_draw_rejects_then_stops_at_second_and_preserves_explicit_canvas(
     plugin, command, draw_setup, comfy_transport
 ):
     state, _, _ = draw_setup
-    state.update(reject=1, repair=True)
+    state["reject"] = 1
     command["text"] += "，比例3：4"
 
     async def run():
@@ -737,7 +730,7 @@ def test_draw_rejects_then_stops_at_second_and_preserves_explicit_canvas(
         assert record["status"] == "sent", record
         assert record["width"] < record["height"]
         assert len(state["downloads"]) == 2 and state["reviews"] == 2
-        assert plugin.ctx.llm.generate.await_count == 5
+        assert plugin.ctx.llm.generate.await_count == 4
         assert len(comfy_transport) == 3
         await plugin.on_unload()
 
@@ -850,7 +843,9 @@ def test_draw_counts_failed_reviews_and_reports_actual_failure(
             == state["reviews"]
             == (1 if failure in {"vision_unavailable", "transport_error"} else 3)
         )
-        assert validation["repair_used"] is False and not comfy_transport
+        assert validation["brief_repair_used"] is False
+        assert validation["export_repair_used"] is False
+        assert not comfy_transport
         if failure == "mixed_review_failure":
             assert "部分候选" in plugin.ctx.send.text.call_args.args[0]
         await plugin.on_unload()
@@ -1116,7 +1111,39 @@ def test_draw_invalid_brief_stops_after_one_correction_before_search(
     asyncio.run(run())
 
 
-def test_draw_brief_and_export_share_one_correction_budget(
+def test_draw_export_failure_records_category_and_repair_attempt(
+    plugin, command, draw_setup, comfy_transport
+):
+    state, _, _ = draw_setup
+    state["export_bad"] = True
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["error_kind"] == "invalid_export"
+        failure = record["export_failure"]
+        assert failure["category"] == "explicit_text_mismatch"
+        assert failure["repair_attempted"] is True
+        assert failure["repair_skipped"] == ""
+        validation = json.loads(
+            (
+                plugin.store.runtime / record["task_id"] / "draw/validation.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert validation["export_repair_used"] is True
+        assert validation["export_repair_skipped"] == ""
+        assert validation["export_failure"]["category"] == "explicit_text_mismatch"
+        assert not comfy_transport
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_brief_and_export_repairs_are_separate(
     plugin, command, draw_setup, comfy_transport
 ):
     state, _, _ = draw_setup
@@ -1129,17 +1156,27 @@ def test_draw_brief_and_export_share_one_correction_budget(
         record = json.loads(
             next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
         )
-        assert record["error_kind"] == "invalid_export" and not comfy_transport
-        assert plugin.ctx.llm.generate.await_count == 4
+        assert record["status"] == "sent", record
+        validation = json.loads(
+            (
+                plugin.store.runtime / record["task_id"] / "draw/validation.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert validation["brief_repair_used"] is True
+        assert validation["export_repair_used"] is True
+        assert validation["export_repair_skipped"] == ""
+        assert validation["model_calls"] <= 8
         diagnostic = json.loads(
             (plugin.store.data / "last_llm_response.json").read_text(encoding="utf-8")
         )
-        assert [call["stage"] for call in diagnostic["calls"]] == [
-            "draw_brief",
+        stages = [call["stage"] for call in diagnostic["calls"]]
+        assert {
             "draw_brief_repair",
             "draw_review",
             "draw_adapt",
-        ]
+            "draw_repair",
+        }.issubset(stages)
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
         await plugin.on_unload()
 
     asyncio.run(run())
