@@ -29,7 +29,17 @@ timeout = 180
 positive_prefix = "best quality, highres,"
 presets = ["千代风格=@yuasa akira, @tomose shunsaku, @kithera, @enuzoushigaya, 简洁干净的二次元平涂画风，"]
 default_style = "千代风格"
-default_application = "all" # generate: only generation; all: generation, comics and memes
+default_application = "all" # generate: only generation; all: generation, comics, memes and draw
+
+[draw]
+enabled = false
+tavily_api_key = ""
+profile = "default"
+
+[draw.limits]
+prepare_timeout = 180
+search_budget = 2
+cache_mib = 256
 
 [characters]
 admin_user_ids = []

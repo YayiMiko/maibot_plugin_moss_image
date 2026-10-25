@@ -130,7 +130,7 @@ class Styles(PluginConfigBase):
     default_style: str = Field(default="千代风格", max_length=80)
     default_application: Literal["generate", "all"] = Field(
         default="all",
-        description="风格默认用途：generate=仅生成；all=生成、漫画、表情包。规划和布局始终不加风格。可在 /moss 风格 设置 中为当前用户和会话选择。",
+        description="风格默认用途：generate=仅生成；all=生成、漫画、表情包、抽卡。规划和布局始终不加风格。可在 /moss 风格 设置 中为当前用户和会话选择。",
     )
 
     @model_validator(mode="after")
@@ -177,7 +177,42 @@ class Characters(PluginConfigBase):
     )
 
 
+class DrawLimits(PluginConfigBase):
+    __ui_label__ = "抽卡高级预算"
+    prepare_timeout: int = Field(default=180, ge=30, le=300)
+    search_budget: int = Field(default=2, ge=1, le=2)
+    cache_mib: int = Field(default=256, ge=16, le=256)
+
+
+class Draw(PluginConfigBase):
+    __ui_label__ = "高美学抽卡"
+    enabled: bool = Field(
+        default=False,
+        json_schema_extra={"label": "启用抽卡"},
+        description="完成图源、视觉能力与审美校准后启用；一次只生成一张图。",
+    )
+    tavily_api_key: str = Field(
+        default="",
+        repr=False,
+        max_length=256,
+        pattern=r"^[^\s]*$",
+        json_schema_extra={"input_type": "password", "label": "Tavily API Key"},
+        description="Tavily 搜索凭据；不会读取其他插件或写入任务快照。",
+    )
+    profile: str = Field(
+        default="default",
+        pattern=r"^[a-zA-Z0-9_-]{1,40}$",
+        json_schema_extra={"label": "审美档案"},
+        description="私有 draw_profiles/ 下的已校准审美档案名称。",
+    )
+    limits: DrawLimits = Field(
+        default_factory=DrawLimits,
+        json_schema_extra={"label": "高级预算（一般无需修改）"},
+    )
+
+
 class MossConfig(PluginConfigBase):
+    model_config = {**PluginConfigBase.model_config, "hide_input_in_errors": True}
     plugin: PluginMetadata = Field(default_factory=PluginMetadata)
     connection: Connection = Field(default_factory=Connection)
     planning: Planning = Field(default_factory=Planning)
@@ -186,3 +221,4 @@ class MossConfig(PluginConfigBase):
     delivery: Delivery = Field(default_factory=Delivery)
     vision: Vision = Field(default_factory=Vision)
     characters: Characters = Field(default_factory=Characters)
+    draw: Draw = Field(default_factory=Draw)

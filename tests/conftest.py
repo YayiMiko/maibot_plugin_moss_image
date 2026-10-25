@@ -2,6 +2,7 @@
 
 import io
 import logging
+import socket
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -29,6 +30,7 @@ def no_network(monkeypatch):
     monkeypatch.setattr(requests, "get", forbidden)
     monkeypatch.setattr(requests, "post", forbidden)
     monkeypatch.setattr(httpx.AsyncClient, "send", offline_send)
+    monkeypatch.setattr(socket, "create_connection", forbidden)
 
 
 @pytest.fixture

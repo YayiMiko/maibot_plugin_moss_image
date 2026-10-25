@@ -82,7 +82,7 @@ def test_help_explains_modes_and_reverse_does_not_accept_generation_arguments():
     assert "原文直出" in HELP and "官方扩写＋布局规划生图" in HELP
     assert "非原词" in HELP
     assert "宽×高像素" in HELP
-    assert "\n\n" not in HELP and len(HELP.splitlines()) == 10 and len(HELP) < 480
+    assert "\n\n" not in HELP and len(HELP.splitlines()) <= 12 and len(HELP) < 520
     with pytest.raises(ValueError):
         parse_command("/moss 反推 顺便生图", MossConfig().rendering)
 

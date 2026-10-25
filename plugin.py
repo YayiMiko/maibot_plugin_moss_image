@@ -14,6 +14,7 @@ if __package__:
     from .moss.config import MossConfig
     from .moss.oc import OCStore
     from .moss.planner import Planner
+    from .moss.references import cache_reference
     from .moss.skill import OfficialSkill
     from .moss.storage import TaskStore
     from .moss.styles import StyleStore
@@ -24,6 +25,7 @@ else:
     from moss.config import MossConfig
     from moss.oc import OCStore
     from moss.planner import Planner
+    from moss.references import cache_reference
     from moss.skill import OfficialSkill
     from moss.storage import TaskStore
     from moss.styles import StyleStore
@@ -65,6 +67,18 @@ class MossPlugin(MaiBotPlugin):
                 await self.store.cleanup(
                     self.config.connection.retention_days, set(self.jobs)
                 )
+                if not self.jobs:
+                    try:
+                        await asyncio.to_thread(
+                            cache_reference,
+                            self.store.data / "draw_reference_cache",
+                            None,
+                            self.config.draw.limits.cache_mib * 1024**2,
+                        )
+                    except Exception as exc:
+                        self.ctx.logger.warning(
+                            "MOSS reference cleanup skipped: %s", type(exc).__name__
+                        )
             await asyncio.sleep(3600)
 
     async def on_unload(self):
@@ -170,6 +184,28 @@ class MossPlugin(MaiBotPlugin):
         if action == "help":
             await self.runner.notice(HELP, stream)
             return True, None, 2
+        if action == "draw":
+            if not config.draw.enabled:
+                await self.runner.notice(
+                    "高美学抽卡尚未启用，请先由维护者完成图源、视觉能力和审美校准。",
+                    stream,
+                )
+                return True, None, 2
+            segments = message.get("raw_message")
+            if (
+                "[image]" in text
+                or message.get("reply_to")
+                or any(
+                    isinstance(segment, dict)
+                    and segment.get("type") in {"image", "reply"}
+                    for segment in (segments if isinstance(segments, list) else [])
+                )
+            ):
+                await self.runner.notice(
+                    "抽卡会联网选择参考，请单独发送文字要求；附图或引用图不会参与抽卡。",
+                    stream,
+                )
+                return True, None, 2
         message_id = str(message.get("message_id") or "")
         if not message_id:
             await self.runner.notice("缺少消息编号，请重新发送指令。", stream)
@@ -188,11 +224,15 @@ class MossPlugin(MaiBotPlugin):
             if len(self.jobs) >= config.connection.max_pending:
                 await self.runner.notice("MOSS 队列已满，请稍后再试。", stream)
                 return True, None, 2
-            if action == "generate" and (
-                request.mode == "generate" or request.task_type != "illustration"
+            if (
+                action == "draw"
+                or action == "generate"
+                and (request.mode == "generate" or request.task_type != "illustration")
             ):
                 style_name, style_prompt = await self.styles.snapshot(
-                    scope, config.styles, request.task_type
+                    scope,
+                    config.styles,
+                    "draw" if action == "draw" else request.task_type,
                 )
                 request = replace(
                     request,
@@ -202,7 +242,7 @@ class MossPlugin(MaiBotPlugin):
                     style_name=style_name,
                     style_prompt=style_prompt,
                 )
-            if action == "generate" and request.oc_names:
+            if action in {"generate", "draw"} and request.oc_names:
                 try:
                     request = replace(
                         request,

@@ -10,6 +10,11 @@ is removed. Do not add status, debug, task recovery, image editing, animated
 memes, image-reference generation or multipage commands. OC use must be explicit;
 only creators and configured library administrators may mutate an existing OC.
 Comic storyboards are internal data; export only official flat Layout fields.
+Draw is an explicit, opt-in text-to-image route: curated images are visual-analysis
+references only, never ComfyUI image inputs. Stop at the first eligible reference,
+attempt at most three works and submit one output. Preserve false-by-default
+enablement until real source/model/aesthetic acceptance, private key redaction,
+calibrated anchors and public-only bounded resource fetching. See aesthetic-draw.md.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru

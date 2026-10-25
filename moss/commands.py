@@ -15,6 +15,7 @@ HELP = (
     "/moss 布局 <要求>：官方扩写＋布局规划生图\n"
     "/moss 漫画 <剧情/角色>：单页灵活分镜\n"
     "/moss 表情包 <要求>：单张静态表情包\n"
+    "/moss 抽卡 <要求>：联网精选参考，改编生一张图\n"
     "/moss 角色：OC 查看、管理与调用方法\n"
     "/moss 风格：查看、选择、新建或编辑风格\n"
     "/moss 解析法术：附图/引用，读取原始提示词\n"
@@ -54,6 +55,7 @@ class ImageRequest:
     oc_context: dict | None = None
     oc_names: tuple[str, ...] = ()
     panel_count: int | None = None
+    canvas_explicit: bool = True
 
 
 @dataclass(frozen=True)
@@ -130,11 +132,13 @@ def parse_command(
         "布局": "layout",
         "漫画": "layout",
         "表情包": "caption",
+        "抽卡": "caption",
     }
     if keyword not in modes:
         raise ValueError("请使用 /moss 生成 <要求> 或 /moss 规划 <要求>。")
     mode = modes[keyword]
     task_type = {"漫画": "comic_page", "表情包": "meme"}.get(keyword, "illustration")
+    draw = keyword == "抽卡"
     body = body[len(keyword) :].strip()
     # Mask literal text without changing offsets into the original input.
     masked = list(body)
@@ -280,7 +284,7 @@ def parse_command(
     body = body.strip()
     if not body:
         raise ValueError("请填写绘图要求。")
-    return "generate", ImageRequest(
+    return "draw" if draw else "generate", ImageRequest(
         body,
         width,
         height,
@@ -288,4 +292,5 @@ def parse_command(
         task_type=task_type,
         oc_names=oc_names,
         panel_count=panel_count,
+        canvas_explicit=bool(size_matches or ratio_matches) if draw else True,
     )

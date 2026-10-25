@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add opt-in `/moss 抽卡` with source-scoped Tavily discovery, verified-page image associations, calibrated visual admission and blueprint extraction in one call, and official Caption/Layout adaptation. Stop at the first eligible reference, attempt at most three works, prepare within 180 seconds by default and submit one image through the existing delivery boundary.
+- Extend all-mode style applicability to draw, preserve explicit canvas or inherit the reference ratio, and retain verified character/explicit OC bindings. Add bounded public-only HTTPS fetching, private anchor import and reference retention, and exclude search credentials from all task snapshots. New draw remains disabled pending explicit source/model/aesthetic acceptance.
 - Bind candidate tags to independently queried original-name wiki aliases or existing explicit aliases before treating tag existence as identity verification. Resolve published alternate names even when the LLM returns Chinese or wrong-character candidates; cache source-name evidence without caching LLM guesses. Recognize the existing Cartethyia spelling variant without rewriting user descriptions.
 - Clarify ASCII canonical-tag hints in identity extraction, and add offline regressions for same-work wrong identities, missing/invalid hints, ambiguous aliases and final workflow submissions. Preserve the v0.2.0 direct-input boundary, existing media/style fixes, rendering settings and pinned official resources.
 - Prune redundant style/media parameter combinations and prompt-string assertions; retain original-name online-resolution paths, rejection/timeout boundaries and final workflow assertions rather than using test count as acceptance evidence.

@@ -154,13 +154,15 @@ class StyleStore:
                 scope, config.default_application
             )
             usage = (
-                "仅「生成」" if application == "generate" else "「生成、漫画、表情包」"
+                "仅「生成」"
+                if application == "generate"
+                else "「生成、漫画、表情包、抽卡」"
             )
             if request.operation == "settings":
                 return [
                     "风格用于哪些功能？\n1. 仅「生成」"
                     + ("（默认）" if config.default_application == "generate" else "")
-                    + "\n2.「生成、漫画、表情包」"
+                    + "\n2.「生成、漫画、表情包、抽卡」"
                     + ("（默认）" if config.default_application == "all" else ""),
                     "当前：" + usage,
                     "选择：/moss 风格 设置 1\n或：/moss 风格 设置 2",
@@ -193,7 +195,7 @@ class StyleStore:
                 usage = (
                     "仅「生成」"
                     if request.content == "generate"
-                    else "「生成、漫画、表情包」"
+                    else "「生成、漫画、表情包、抽卡」"
                 )
                 notice = f"已设为用于{usage}，仅影响你在本会话中的后续任务。「规划」「布局」不使用风格。"
             elif request.operation == "select":

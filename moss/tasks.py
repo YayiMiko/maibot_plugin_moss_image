@@ -7,6 +7,8 @@ from dataclasses import asdict
 
 from .comfy import ComfyClient
 from .delivery import send_result
+from .draw import DrawPlanner
+from .draw_models import DrawError
 from .media import MetadataReader, MultipleImagesError, extract_metadata
 from .planner import PlanningError
 from .storage import atomic_write
@@ -22,6 +24,7 @@ class TaskRunner:
         self.styles = styles
         self.characters = characters
         self.gpu_lock = asyncio.Lock()
+        self.draw_planner = DrawPlanner(planner, store)
 
     async def run(self, record: dict, action: str, request, config, context: dict):
         """Run one accepted task using only its captured configuration and target.
@@ -100,10 +103,20 @@ class TaskRunner:
                     atomic_write, directory / "request.json", asdict(request)
                 )
                 await asyncio.to_thread(
-                    atomic_write, directory / "config.json", config.model_dump()
+                    atomic_write,
+                    directory / "config.json",
+                    config.model_dump(exclude={"draw": {"tavily_api_key"}}),
                 )
 
-                plan = await self.planner.plan(request, config.planning, capture)
+                if action == "draw":
+                    request, plan = await self.draw_planner.plan(
+                        request, config, record, capture
+                    )
+                    await asyncio.to_thread(
+                        atomic_write, directory / "request.json", asdict(request)
+                    )
+                else:
+                    plan = await self.planner.plan(request, config.planning, capture)
                 record.update(
                     mode=plan.mode,
                     characters=plan.characters,
@@ -111,7 +124,9 @@ class TaskRunner:
                     height=request.height,
                     body_format=plan.body_format,
                     task_type=request.task_type,
-                    planner="direct-input"
+                    planner="aesthetic-draw"
+                    if action == "draw"
+                    else "direct-input"
                     if request.mode == "generate"
                     else "official-skill",
                 )
@@ -207,6 +222,8 @@ class TaskRunner:
                 record["error_kind"] = exc.reason
             if isinstance(exc, VisionError):
                 record["error_kind"] = exc.reason
+            if isinstance(exc, DrawError):
+                record["error_kind"] = exc.reason
             await self.store.save(record)
             self.ctx.logger.warning(
                 "MOSS task failed: task=%s error=%s",
@@ -217,6 +234,20 @@ class TaskRunner:
                 notice = "结果发送回执未确认；可能已送达，没有自动重发。"
             elif record["status"] == "remote_unknown":
                 notice = "ComfyUI 任务状态未确认，没有重新提交；请联系维护者检查。"
+            elif isinstance(exc, DrawError):
+                notice = {
+                    "draw_disabled": "高美学抽卡尚未启用。",
+                    "uncalibrated": "抽卡所需的图源、视觉能力或该类作品的审美校准尚未完成。",
+                    "search_unavailable": "本次未能取得可用图源，请检查搜索配置；没有提交生图。",
+                    "no_eligible_reference": "本次未找到符合审美门槛和要求的参考，没有提交默认图。",
+                    "reference_unreadable": "参考资料无法可靠读取，本次没有提交生图。",
+                    "vision_blocked": "视觉模型拒绝了本次请求，没有提交生图。",
+                    "vision_unavailable": "视觉审核未完成，请检查视觉模型配置；没有提交生图。",
+                    "planning_blocked": "规划模型拒绝了本次请求，没有提交生图。",
+                    "style_conflict": "本次要求与所选风格存在冲突，请调整要求或风格后再试。",
+                    "constraint_conflict": "本次要求存在无法同时满足的条件，请调整后再试。",
+                    "budget_exhausted": "抽卡准备已到时间或调用上限，没有提交默认图。",
+                }.get(exc.reason, "抽卡设计导出未完成，没有提交生图或使用默认内容。")
             elif isinstance(exc, PlanningError):
                 notice = (
                     "提示词模型拒绝了本次请求，未提交生图。"
