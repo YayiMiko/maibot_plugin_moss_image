@@ -224,15 +224,13 @@ class MossPlugin(MaiBotPlugin):
             if len(self.jobs) >= config.connection.max_pending:
                 await self.runner.notice("MOSS 队列已满，请稍后再试。", stream)
                 return True, None, 2
-            if (
-                action == "draw"
-                or action == "generate"
-                and (request.mode == "generate" or request.task_type != "illustration")
+            if action == "generate" and (
+                request.mode == "generate" or request.task_type != "illustration"
             ):
                 style_name, style_prompt = await self.styles.snapshot(
                     scope,
                     config.styles,
-                    "draw" if action == "draw" else request.task_type,
+                    request.task_type,
                 )
                 request = replace(
                     request,

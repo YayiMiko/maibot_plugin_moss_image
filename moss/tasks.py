@@ -244,7 +244,8 @@ class TaskRunner:
                     "vision_blocked": "视觉模型拒绝了本次请求，没有提交生图。",
                     "vision_unavailable": "视觉审核未完成，请检查视觉模型配置；没有提交生图。",
                     "planning_blocked": "规划模型拒绝了本次请求，没有提交生图。",
-                    "style_conflict": "本次要求与所选风格存在冲突，请调整要求或风格后再试。",
+                    "invalid_brief": "抽卡简报规划未通过校验，一次纠正后仍未完成；尚未搜索参考图或提交生图。",
+                    "brief_unavailable": "抽卡简报模型未返回可用结果，尚未搜索参考图或提交生图。",
                     "constraint_conflict": "本次要求存在无法同时满足的条件，请调整后再试。",
                     "budget_exhausted": "抽卡准备已到时间或调用上限，没有提交默认图。",
                 }.get(exc.reason, "抽卡设计导出未完成，没有提交生图或使用默认内容。")

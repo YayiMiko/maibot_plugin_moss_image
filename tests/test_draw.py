@@ -89,6 +89,8 @@ def draw_setup(plugin, command, monkeypatch):
         "broken": False,
         "requests": [],
         "repair": False,
+        "brief_calls": 0,
+        "brief_bad": 0,
     }
 
     def http(url, **kwargs):
@@ -124,6 +126,7 @@ def draw_setup(plugin, command, monkeypatch):
         assert "private-test-search-key" not in json.dumps(messages)
         system = messages[0]["content"]
         if system.startswith("Prepare an image"):
+            state["brief_calls"] += 1
             original = json.loads(messages[1]["content"])["request"]
             response = {
                 "category": "poster" if state.get("poster") else "illustration",
@@ -132,14 +135,22 @@ def draw_setup(plugin, command, monkeypatch):
                     for source, requirement in [
                         ("单人", "one person"),
                         ("不要文字", "no lettering"),
+                        ("水彩画", "watercolor treatment"),
                     ]
                     if source in original
                 ],
                 "creative_freedom": "setting and framing",
                 "query": "curated editorial artwork",
                 "fallback_query": "excellent visual composition",
-                "style_compatible": True,
             }
+            if state["brief_calls"] <= state["brief_bad"]:
+                response["constraints"].append(
+                    {
+                        "source": "@yuasa akira",
+                        "requirement": "Wrongly imported common preset",
+                    }
+                )
+                response["style_compatible"] = False
         elif system.startswith("You are a visual art editor"):
             state["reviews"] += 1
             if state["blocked"]:
@@ -209,7 +220,11 @@ def draw_setup(plugin, command, monkeypatch):
                     item["source"] for item in payload["brief"]["constraints"]
                 ],
                 "constraint_renderings": [
-                    "single girl" if item["source"] == "单人" else "No lettering"
+                    "single girl"
+                    if item["source"] == "单人"
+                    else "Watercolor illustration"
+                    if item["source"] == "水彩画"
+                    else "No lettering"
                     for item in payload["brief"]["constraints"]
                 ],
                 "design_coverage": [0, 1, 2],
@@ -228,6 +243,8 @@ def draw_setup(plugin, command, monkeypatch):
                     "caption": "A single girl in a blue and cream composition with negative space. No lettering."
                 },
             }
+            if "水彩画" in payload["request"]:
+                response["draft"]["caption"] += " Watercolor illustration."
             if state.get("poster"):
                 response.update(mode="layout", visible_texts=payload["fixed_texts"])
                 response["draft"] = {
@@ -290,7 +307,13 @@ def test_draw_first_eligible_submits_exactly_once_and_redacts_config(
         plugin.ctx.send.text.assert_not_awaited()
         directory = plugin.store.runtime / record["task_id"]
         prompt = (directory / "prompt.txt").read_text(encoding="utf-8")
-        assert prompt.startswith(plugin.config.styles.presets[0].split("=", 1)[1])
+        assert plugin.config.styles.presets[0].split("=", 1)[1] not in prompt
+        assert all(
+            "@yuasa akira" not in json.dumps(messages, ensure_ascii=False)
+            for messages in state["requests"]
+        )
+        prefixes = json.loads((directory / "prefixes.json").read_text(encoding="utf-8"))
+        assert prefixes["style_name"] == prefixes["style_prompt"] == ""
         assert "best quality" not in prompt
         snapshot = json.loads((directory / "config.json").read_text(encoding="utf-8"))
         assert "tavily_api_key" not in snapshot["draw"]
@@ -479,9 +502,10 @@ def test_draw_disabled_attachment_and_style_scope_boundaries(plugin, command):
             "",
         )
         plugin.config.styles.default_application = "all"
-        assert (await plugin.styles.snapshot("a" * 64, plugin.config.styles, "draw"))[
-            0
-        ] == "千代风格"
+        assert await plugin.styles.snapshot("a" * 64, plugin.config.styles, "draw") == (
+            "",
+            "",
+        )
         await plugin.on_unload()
 
     asyncio.run(run())
@@ -552,10 +576,96 @@ def test_draw_poster_compiles_real_layout_and_keeps_exact_copy(
             item["text"] for item in compiled["items"] if item["label"] == "text"
         ] == ["风起！"]
         assert "constraint_sources" not in compiled and "width" not in compiled
-        assert compiled["summary"]["caption"].startswith(
+        assert (
             plugin.config.styles.presets[0].split("=", 1)[1]
+            not in compiled["summary"]["caption"]
         )
         assert plugin.ctx.llm.generate.await_count == 3
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_repairs_contaminated_brief_once_and_keeps_explicit_user_style(
+    plugin, command, draw_setup, comfy_transport
+):
+    state, _, _ = draw_setup
+    state["brief_bad"] = 1
+    command["text"] += "，水彩画"
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        directory = plugin.store.runtime / record["task_id"]
+        brief = json.loads((directory / "draw/brief.json").read_text(encoding="utf-8"))
+        assert "水彩画" in {item["source"] for item in brief["constraints"]}
+        assert all(
+            item["source"] in "少女，单人，不要文字，水彩画"
+            for item in brief["constraints"]
+        )
+        assert "style_compatible" not in brief
+        prompt = (directory / "prompt.txt").read_text(encoding="utf-8")
+        assert "Watercolor illustration" in prompt and "@yuasa akira" not in prompt
+        assert state["brief_calls"] == 2 and plugin.ctx.llm.generate.await_count == 4
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_invalid_brief_stops_after_one_correction_before_search(
+    plugin, command, draw_setup, comfy_transport
+):
+    state, _, _ = draw_setup
+    state["brief_bad"] = 2
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["error_kind"] == "invalid_brief"
+        assert (
+            state["brief_calls"] == 2 and state["searches"] == 0 and not comfy_transport
+        )
+        assert "简报" in plugin.ctx.send.text.call_args.args[0]
+        plugin.ctx.send.image.assert_not_awaited()
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_brief_and_export_share_one_correction_budget(
+    plugin, command, draw_setup, comfy_transport
+):
+    state, _, _ = draw_setup
+    state.update(brief_bad=1, repair=True)
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["error_kind"] == "invalid_export" and not comfy_transport
+        assert plugin.ctx.llm.generate.await_count == 4
+        diagnostic = json.loads(
+            (plugin.store.data / "last_llm_response.json").read_text(encoding="utf-8")
+        )
+        assert [call["stage"] for call in diagnostic["calls"]] == [
+            "draw_brief",
+            "draw_brief_repair",
+            "draw_review",
+            "draw_adapt",
+        ]
         await plugin.on_unload()
 
     asyncio.run(run())

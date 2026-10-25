@@ -203,7 +203,6 @@ class Aesthetics:
                 "text": json.dumps(
                     {
                         "request": request.prompt,
-                        "style": request.style_prompt,
                         "brief": brief.model_dump(),
                         "candidate_id": record["id"],
                         "canvas": {"width": request.width, "height": request.height}
@@ -239,6 +238,7 @@ class Aesthetics:
             + criteria
             + "Do not reward complexity, brand, saturation, large type or polish by themselves; intentional grain, glitch, minimalism and occlusion may be excellent. "
             "Judge quality independently from request fit and adaptation. Only strong work with coherent composition, deliberate color/value hierarchy and convincing execution is admissible. "
+            "No common style preset is supplied. style_compatible checks only visual treatment explicitly requested in request; do not invent compatibility rules for a preset. "
             "Reject partial mockups, screenshots, low-resolution previews and uncertainty. Be concrete about visible evidence and flaws. "
             "If it qualifies, describe the ORIGINAL image in a reconstruction-level blueprint; do not pretend the target character is already there. "
             "Its blueprint must identify 3-6 valuable design relationships, subject relationships, light/palette, typography, materials, unrelated identities/brands/text to remove, and uncertain details. "

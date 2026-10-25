@@ -119,7 +119,7 @@ def test_application_selection_is_persistent_deduplicated_and_scope_local(tmp_pa
         menu = "\n".join(
             await reloaded.handle(StyleRequest("settings"), first, "c" * 24, config)
         )
-        assert "当前：「生成、漫画、表情包、抽卡」" in menu
+        assert "当前：「生成、漫画、表情包」" in menu
 
     asyncio.run(run())
 

@@ -116,11 +116,14 @@ class StyleStore:
             scope: Hash of the platform, conversation and sender.
             config: Detached style library and application defaults.
             task_type: Illustration, comic page or meme. The caller excludes
-                explicit Caption/Layout illustration routes entirely.
+                explicit Caption/Layout illustration routes entirely; draw is
+                always excluded regardless of the configured application.
 
         Returns:
             Frozen name and content, or empty strings for excluded media.
         """
+        if task_type == "draw":
+            return "", ""
         async with self.lock:
             application = self.state["applications"].get(
                 scope, config.default_application
@@ -154,19 +157,17 @@ class StyleStore:
                 scope, config.default_application
             )
             usage = (
-                "仅「生成」"
-                if application == "generate"
-                else "「生成、漫画、表情包、抽卡」"
+                "仅「生成」" if application == "generate" else "「生成、漫画、表情包」"
             )
             if request.operation == "settings":
                 return [
                     "风格用于哪些功能？\n1. 仅「生成」"
                     + ("（默认）" if config.default_application == "generate" else "")
-                    + "\n2.「生成、漫画、表情包、抽卡」"
+                    + "\n2.「生成、漫画、表情包」"
                     + ("（默认）" if config.default_application == "all" else ""),
                     "当前：" + usage,
                     "选择：/moss 风格 设置 1\n或：/moss 风格 设置 2",
-                    "「规划」「布局」始终不使用风格。选择仅影响你在本会话中的后续任务。",
+                    "「规划」「布局」「抽卡」始终不使用风格预设。选择仅影响你在本会话中的后续任务。",
                 ]
             if request.operation == "list":
                 return [
@@ -195,9 +196,9 @@ class StyleStore:
                 usage = (
                     "仅「生成」"
                     if request.content == "generate"
-                    else "「生成、漫画、表情包、抽卡」"
+                    else "「生成、漫画、表情包」"
                 )
-                notice = f"已设为用于{usage}，仅影响你在本会话中的后续任务。「规划」「布局」不使用风格。"
+                notice = f"已设为用于{usage}，仅影响你在本会话中的后续任务。「规划」「布局」「抽卡」不使用风格预设。"
             elif request.operation == "select":
                 if request.name not in library:
                     return ["没有找到该风格，请使用 /moss 风格 查看列表。"]

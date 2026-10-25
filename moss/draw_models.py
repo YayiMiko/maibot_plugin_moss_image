@@ -32,7 +32,6 @@ class Brief(StrictRecord):
     creative_freedom: str = Field(min_length=1, max_length=2048)
     query: str = Field(min_length=1, max_length=300)
     fallback_query: str = Field(min_length=1, max_length=300)
-    style_compatible: bool
 
 
 class Blueprint(StrictRecord):

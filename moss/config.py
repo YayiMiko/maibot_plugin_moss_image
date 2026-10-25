@@ -130,7 +130,7 @@ class Styles(PluginConfigBase):
     default_style: str = Field(default="千代风格", max_length=80)
     default_application: Literal["generate", "all"] = Field(
         default="all",
-        description="风格默认用途：generate=仅生成；all=生成、漫画、表情包、抽卡。规划和布局始终不加风格。可在 /moss 风格 设置 中为当前用户和会话选择。",
+        description="风格默认用途：generate=仅生成；all=生成、漫画、表情包。规划、布局、抽卡始终不加风格预设。可在 /moss 风格 设置 中为当前用户和会话选择。",
     )
 
     @model_validator(mode="after")
