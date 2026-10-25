@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.1 — 2026-10-26
 
 - Remove draw export self-certification gates: model keep/replace notes and coverage prose no longer need to appear verbatim in captions. Keep objective Canvas/Layout compilation, identity bindings, explicit fixed text, subject count and official schema checks; carry design relationships through the blueprint and adaptation prompt.
 - Give brief and export separate bounded repair attempts under the existing eight-call and prepare deadline. Record export failure category, sanitized message, repair attempt and skip reason instead of collapsing everything to invalid_export.
@@ -33,6 +33,8 @@
 - Make media styles actual prefixes of Caption or `summary.caption`, relocating exact echoed styles without rewriting ordinary words, drawing preset text or changing standalone Caption/Layout routes.
 - Include boolean depiction in the identity JSON example, distinguish missing fields from exclusions with one bounded repair, and clarify adjacent name/expression boundaries. Direct generation continues to preserve the user's original description when optional research fails.
 - Standardize ongoing local and CI tests on production SDK 2.13.0; remove the 2.8.2 matrix while retaining Windows/Linux and Python 3.12/3.13 coverage. Existing release artifacts and compatibility declarations are unchanged.
+
+Validated with 496 offline tests, Ruff, vendor compiler/hash checks and four GitHub CI jobs. One real `/moss 抽卡` closed loop produced one Layout image and a nonempty QQ receipt. Offline checks do not imply general success or aesthetic acceptance.
 
 ## v0.2.0 — 2026-10-18
 
