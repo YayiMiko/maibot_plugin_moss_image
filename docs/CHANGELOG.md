@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Clarify that review blueprint prose fields are single strings, not arrays; `remove_source_content` joins multiple removals into one sentence.
 - Preserve only design relationships actually present in the current reference and compatible with the request; adapt subject/layer structure, typography occlusion, scale and density without adding double figures, echoes, giant titles, cuts or dense annotations as defaults. Secondary source subjects are interpreted by role and may be kept, replaced with suitable non-figure elements, or recomposed; never invent a named character or hide an obvious extra humanoid as a graphic layer when the user requires one person.
 
 ## v0.2.1 — 2026-10-26

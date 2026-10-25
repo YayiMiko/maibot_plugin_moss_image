@@ -177,6 +177,8 @@ class TemplateReviewer:
             "a reconstruction-level ORIGINAL blueprint: composition, positions and subject relationships, "
             "light/palette, typography, medium/materials, source names/brands/text to remove, uncertain details "
             "and 1-6 valuable transferable design relationships. Minimal work may need only one. "
+            "All blueprint prose fields are single strings, never arrays; only design_relationships is an array. "
+            "For remove_source_content, join multiple removals into one sentence. "
             "If template_usable is false, blueprint must be null and blocking_issues must explain the concrete blocker. "
             "has_target_subject is an observation only and never a veto. required_replacements are not vetoes. "
             "Do not pretend the target character is present. "

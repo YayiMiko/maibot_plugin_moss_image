@@ -156,6 +156,7 @@ def test_review_passes_post_text_as_untrusted_context():
     assert "complete artwork" in captured["system"]
     assert "Do not copy the schema itself" in captured["system"]
     assert "$defs" in captured["system"]
+    assert "All blueprint prose fields are single strings" in captured["system"]
 
 
 def test_tutorial_screenshot_is_an_image_blocker():
