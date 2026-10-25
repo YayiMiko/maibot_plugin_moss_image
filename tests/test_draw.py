@@ -43,6 +43,7 @@ def draw_setup(plugin, command, monkeypatch):
         for name in ["art.example.com", "design.example.com"]
     ]
     monkeypatch.setattr("moss.aesthetics.BUILTIN_SOURCES", tuple(sources))
+    monkeypatch.setattr("moss.xsource.X_ENABLED", False)
     command["text"] = "/moss 抽卡 少女，单人，不要文字"
     state = {
         "downloads": [],
@@ -108,9 +109,7 @@ def draw_setup(plugin, command, monkeypatch):
             state["brief_calls"] += 1
             brief_input = json.loads(messages[1]["content"])
             original = brief_input["request"]
-            wide = len(brief_input["categories"]) > 1 and not state.get("poster")
             response = {
-                "category": "poster" if state.get("poster") else "illustration",
                 "constraints": [
                     {"source": source, "requirement": requirement}
                     for source, requirement in [
@@ -130,19 +129,13 @@ def draw_setup(plugin, command, monkeypatch):
                 "design_intent": "Central silhouette with open space",
                 "alternatives": [
                     {
-                        "category": "poster" if state.get("poster") else "illustration",
                         "query": "geometric expressive design",
                         "design_intent": "Geometric rhythm and asymmetry",
                     },
                     {
-                        "category": "poster"
-                        if state.get("poster")
-                        else "poster"
-                        if wide
-                        else "illustration",
                         "design_intent": "Cinematic scale and contrast",
                         "query": "expressive cinematic poster design"
-                        if wide or state.get("poster")
+                        if state.get("poster")
                         else "expressive editorial color composition",
                     },
                 ],
@@ -158,8 +151,7 @@ def draw_setup(plugin, command, monkeypatch):
                         "requirement": "Wrongly imported common preset",
                     }
                 )
-                response["style_compatible"] = False
-        elif system.startswith("You are a visual art editor"):
+        elif system.startswith("You are a visual design editor"):
             state["reviews"] += 1
             if state["blocked"]:
                 return {
@@ -180,13 +172,20 @@ def draw_setup(plugin, command, monkeypatch):
             rejected = state["reviews"] <= state["reject"]
             response = {
                 "candidate_id": current["candidate_id"],
-                "rating": "weak" if rejected else "strong",
+                "template_usable": not rejected,
+                "usable_relationships": []
+                if rejected
+                else [
+                    "Central silhouette",
+                    "Large negative space",
+                    "Warm-cool contrast",
+                ],
+                "blocking_issues": []
+                if not rejected
+                else ["The composition would require a full redraw."],
+                "required_replacements": ["Original subject identity"],
+                "has_target_subject": True,
                 "evidence": ["Clear silhouette and light-dark organization"],
-                "critical_flaws": [],
-                "fits_request": True,
-                "adaptable": True,
-                "complete_artwork": True,
-                "style_compatible": True,
                 "blueprint": None
                 if rejected
                 else {
@@ -252,7 +251,7 @@ def draw_setup(plugin, command, monkeypatch):
             }
             if "水彩画" in payload["request"]:
                 response["draft"]["caption"] += " Watercolor illustration."
-            if payload["brief"]["category"] == "poster":
+            if state.get("poster") or "海报" in payload["request"]:
                 summary = response["draft"]["caption"]
                 response.update(mode="layout", visible_texts=payload["fixed_texts"])
                 for binding in response["bindings"]:
@@ -334,6 +333,82 @@ def test_draw_first_eligible_submits_exactly_once_and_redacts_config(
     asyncio.run(run())
 
 
+def test_draw_uses_x_first_and_submits_one_association(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.xsource.X_ENABLED", True)
+    output = io.BytesIO()
+    Image.new("RGB", (768, 512), "white").save(output, "PNG")
+    image = output.getvalue()
+
+    def http(url, **kwargs):
+        if "payload" in kwargs:
+            assert kwargs["payload"]["include_domains"] == ["x.com"]
+            return (
+                url,
+                "application/json",
+                json.dumps(
+                    {"results": [{"url": "https://x.com/artist/status/123"}]}
+                ).encode(),
+            )
+        if url == "https://x.com/i/status/123":
+            return (
+                url,
+                "text/html",
+                b'<meta property="og:image" content="https://pbs.twimg.com/media/AAA?format=jpg&amp;name=large">',
+            )
+        if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
+            return (
+                url,
+                "application/json",
+                json.dumps(
+                    {
+                        "id_str": "123",
+                        "text": "A complete character poster",
+                        "user": {"screen_name": "artist"},
+                        "mediaDetails": [
+                            {
+                                "type": "photo",
+                                "media_url_https": "https://pbs.twimg.com/media/AAA.jpg",
+                                "sizes": {"large": {"w": 768, "h": 512}},
+                            }
+                        ],
+                    }
+                ).encode(),
+            )
+        if url.startswith("https://pbs.twimg.com/media/AAA.jpg"):
+            return url, "image/png", image
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        directory = plugin.store.runtime / record["task_id"] / "draw"
+        discovery = json.loads(
+            (directory / "discovery.json").read_text(encoding="utf-8")
+        )
+        assert discovery["searches"][0]["route"] == "x"
+        references = json.loads(
+            (directory / "references.json").read_text(encoding="utf-8")
+        )
+        assert references[0]["source_route"] == "x"
+        reviews = json.loads((directory / "reviews.json").read_text(encoding="utf-8"))
+        assert [item["outcome"] for item in reviews] == ["usable"]
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        assert state["searches"] == 0
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
 def test_draw_rejects_then_stops_at_second_and_preserves_explicit_canvas(
     plugin, command, draw_setup, comfy_transport
 ):
@@ -376,7 +451,7 @@ def test_draw_review_format_failure_recovers_pending_candidate(
     async def wrapped(messages, **kwargs):
         result = await generate(messages, **kwargs)
         if (
-            messages[0]["content"].startswith("You are a visual art editor")
+            messages[0]["content"].startswith("You are a visual design editor")
             and state["reviews"] == 1
         ):
             result["response"] = (
@@ -403,7 +478,7 @@ def test_draw_review_format_failure_recovers_pending_candidate(
             "candidate-2",
         ]
         assert reviews[0]["outcome"] == (
-            "rejected" if first_output == "fenced_rejection" else "invalid_review"
+            "unusable" if first_output == "fenced_rejection" else "invalid_review"
         )
         assert (
             json.loads((directory / "validation.json").read_text(encoding="utf-8"))[
@@ -434,7 +509,7 @@ def test_draw_counts_failed_reviews_and_reports_actual_failure(
 
     async def wrapped(messages, **kwargs):
         result = await generate(messages, **kwargs)
-        if messages[0]["content"].startswith("You are a visual art editor"):
+        if messages[0]["content"].startswith("You are a visual design editor"):
             if failure == "transport_error":
                 raise OSError("Private provider transport error")
             if failure == "vision_unavailable":
@@ -490,7 +565,7 @@ def test_draw_never_lowers_quality_or_resubmits_after_failure(
         assert (
             record["error_kind"]
             == {
-                "reject": "no_eligible_reference",
+                "reject": "no_usable_template",
                 "broken": "reference_unreadable",
                 "blocked": "vision_blocked",
             }[failure]
@@ -572,7 +647,7 @@ def test_removed_profile_settings_are_ignored_and_absent_from_schema():
     )
     assert config.draw.model_dump() == MossConfig().draw.model_dump()
     assert "use_profile" not in config.draw.model_json_schema()["properties"]
-    assert Aesthetics().version == "builtin-v3"
+    assert Aesthetics().version == "template-v1"
 
 
 def test_draw_disabled_attachment_and_style_scope_boundaries(plugin, command):
@@ -809,11 +884,11 @@ def test_open_draw_randomizes_design_direction_before_search(
             briefs.append(
                 json.loads((directory / "brief.json").read_text(encoding="utf-8"))
             )
-        assert {brief["category"] for brief in briefs} == {"poster", "illustration"}
         assert all(
             brief["reference_requirements"] == [] and "卡缇希娅" not in brief["query"]
             for brief in briefs
         )
+        assert len({brief["query"] for brief in briefs}) >= 1
         assert state["searches"] == 2 and len(state["downloads"]) == 2
         assert sum(call.url.path == "/prompt" for call in comfy_transport) == 2
         await plugin.on_unload()

@@ -2,9 +2,9 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-RULES_VERSION = "draw-v3"
+RULES_VERSION = "draw-v4"
 
 
 class DrawError(RuntimeError):
@@ -29,7 +29,6 @@ class Constraint(StrictRecord):
 class SearchDirection(StrictRecord):
     """One visual exploration direction, independent of target character identity."""
 
-    category: Literal["poster", "illustration"]
     query: str = Field(min_length=1, max_length=300)
     design_intent: str = Field(min_length=1, max_length=1200)
 
@@ -54,28 +53,63 @@ class Blueprint(StrictRecord):
     uncertainty: str = Field(max_length=1024)
 
 
-class Review(StrictRecord):
+class TemplateReview(StrictRecord):
+    """Judge template suitability instead of assigning an aesthetic rating."""
+
     candidate_id: str = Field(pattern=r"^candidate-[1-3]$")
-    rating: Literal["strong", "acceptable", "weak", "uncertain"]
+    template_usable: bool
+    usable_relationships: list[str] = Field(default_factory=list, max_length=6)
+    blocking_issues: list[str] = Field(default_factory=list, max_length=6)
+    required_replacements: list[str] = Field(default_factory=list, max_length=6)
+    has_target_subject: bool
     evidence: list[str] = Field(min_length=1, max_length=6)
-    critical_flaws: list[str] = Field(max_length=6)
-    fits_request: bool
-    adaptable: bool
-    complete_artwork: bool
-    style_compatible: bool
     blueprint: Blueprint | None
 
+    @model_validator(mode="after")
+    def check_consistency(self) -> "TemplateReview":
+        """Keep usable and unusable states explainable and mutually exclusive."""
+        text_fields = [
+            self.candidate_id,
+            *self.usable_relationships,
+            *self.blocking_issues,
+            *self.required_replacements,
+            *self.evidence,
+        ]
+        if self.blueprint is not None:
+            text_fields.extend(
+                [
+                    self.blueprint.composition,
+                    self.blueprint.subjects,
+                    self.blueprint.light_palette,
+                    self.blueprint.typography,
+                    self.blueprint.medium_texture,
+                    *self.blueprint.design_relationships,
+                    self.blueprint.remove_source_content,
+                ]
+            )
+        if any(not value.strip() for value in text_fields):
+            raise ValueError("Review text fields must be nonempty")
+        if self.template_usable:
+            if self.blueprint is None:
+                raise ValueError("Usable template requires a blueprint")
+            if not self.usable_relationships:
+                raise ValueError("Usable template requires design relationships")
+            if self.blocking_issues:
+                raise ValueError("Usable template cannot have blocking issues")
+        else:
+            if self.blueprint is not None:
+                raise ValueError("Unusable template must not return a blueprint")
+            if not self.blocking_issues:
+                raise ValueError("Unusable template must explain the blocker")
+        return self
+
     @property
-    def eligible(self) -> bool:
-        """Require independent quality, uncertainty and adaptation gates."""
+    def usable(self) -> bool:
+        """Gate only on template suitability and a concrete blueprint."""
         return (
-            self.rating == "strong"
-            and not self.critical_flaws
-            and self.fits_request
-            and self.adaptable
-            and self.complete_artwork
-            and self.style_compatible
+            self.template_usable
             and self.blueprint is not None
+            and not self.blocking_issues
         )
 
 

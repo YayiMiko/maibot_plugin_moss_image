@@ -11,12 +11,13 @@ memes, image-reference generation or multipage commands. OC use must be explicit
 only creators and configured library administrators may mutate an existing OC.
 Comic storyboards are internal data; export only official flat Layout fields.
 Draw is an explicit, opt-in text-to-image route: curated images are visual-analysis
-references only, never ComfyUI image inputs. Stop at the first eligible reference,
+references only, never ComfyUI image inputs. Stop at the first usable template,
 review at most three images, read at most six work pages and submit one output.
-Use automatic built-in visual criteria only; personal profiles, anchors and manual
-calibration are removed. Ignore obsolete profile configuration without reading or
-deleting old user files. Preserve private key redaction and public-only fetching.
-See aesthetic-draw.md. Real model/image acceptance remains separate from offline checks.
+Use template suitability, not aesthetic ratings, scores, popularity or manual
+profiles; profiles and calibration are removed. Ignore obsolete profile
+configuration without reading or deleting old user files. Preserve private key
+redaction and public-only fetching. See aesthetic-draw.md. Real model/image
+acceptance remains separate from offline checks.
 Draw always excludes common style presets and fixed quality prefixes, including
 the all-style setting; preserve visual styles explicitly written in its request.
 Brief constraints must quote original user spans only. Brief and export share one
@@ -25,12 +26,22 @@ Keep target identity separate from reference discovery. Open draws randomize
 three visual directions before search without category quotas; explicit reference
 themes stay grounded in original user spans. Keep two searches and separate page/
 review ceilings. Preserve pending candidates with their original design direction.
+X is the priority discovery route, not the only route: use Tavily status results,
+confirm the exact post with its page and syndication media, and fall back to the
+approved publisher sources. Never use Tavily image results as the reference and
+never log in, read cookies or run a resident browser. Reject obvious tutorials,
+placeholder templates, ads, news/product photos, text-only posts and profiles;
+do not reject a finished artwork solely for mentioning an AI tool. Do not use
+plain author-name queries; author extension needs unvalidated `from:`/timeline work.
+Canonicalize publisher URLs before duplicate checks, including Behance locale and
+module variants and ArtStation author subdomains. Preserve pending candidates and
+switch sources after reading failures or direction after template rejection.
 Count malformed and failed vision calls toward the three-review ceiling; never
 retry provider refusals. Accept only one complete JSON fence before strict parsing.
 Prefer scoped body artwork over social metadata, keeping the two-fetch page ceiling.
 Treat exploration suggestions separately from original user constraints in reviews.
-Switch sources after reading failures and direction after aesthetic rejection. Record
-sanitized stage/HTTP evidence and never label unreadable inputs as aesthetic rejects.
+Record sanitized stage/HTTP evidence and never label unreadable or unsuitable inputs
+as template-unusable.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
 their license, pinned provenance and hashes. Caption/Layout are not Danbooru

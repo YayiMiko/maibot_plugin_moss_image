@@ -55,6 +55,49 @@ class ReferenceError(DrawError):
         }
 
 
+def validate_search_query(query: str) -> None:
+    """Reject queries that could carry credentials, addresses or control data."""
+    if (
+        len(query) > 300
+        or "@" in query
+        or "://" in query
+        or any(ord(char) < 32 for char in query)
+        or re.search(
+            r"(?<!\d)\d{5,}(?!\d)|\b\d{1,3}(?:\.\d{1,3}){3}\b|(?:api.?key|token|password)\s*[:=]",
+            query,
+            re.I,
+        )
+    ):
+        raise DrawError("invalid_export")
+
+
+def canonical_page_key(url: str) -> str:
+    """Collapse locale, subpage and subdomain variants for candidate deduplication."""
+    try:
+        parsed = public_url(url)
+    except (DrawError, ValueError, TypeError):
+        return url
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    path = parsed.path.rstrip("/")
+    if host in {"artstation.com"} or host.endswith(".artstation.com"):
+        match = re.match(r"/(?:artwork|projects)/([^/]+)", path)
+        if match:
+            return f"artstation.com/{match.group(1)}"
+    if host == "behance.net":
+        match = re.match(r"/gallery/(\d+)", path)
+        if match:
+            return f"behance.net/gallery/{match.group(1)}"
+    if host == "pentagram.com":
+        match = re.match(r"/work/([^/]+)", path)
+        if match:
+            return f"pentagram.com/work/{match.group(1)}"
+    if host == "itsnicethat.com":
+        match = re.match(r"/(articles|features)/([^/]+)", path)
+        if match:
+            return f"itsnicethat.com/{match.group(1)}/{match.group(2)}"
+    return host + path
+
+
 def public_url(url: str):
     """Validate URL syntax; actual DNS and peer checks happen on every connection."""
     parsed = urlsplit(url)
@@ -362,6 +405,7 @@ class ReferenceClient:
         self.config, self.sources = config, sources
         self.calls, self.pages = 0, 0
         self.seen = set()
+        self.seen_keys = set()
         self.searches = []
         self.page_priorities = {}
 
@@ -369,18 +413,7 @@ class ReferenceClient:
         """Return only source-scoped work pages; aggregate image URLs are not proof."""
         if self.calls >= self.config.limits.search_budget:
             return []
-        if (
-            len(query) > 300
-            or "@" in query
-            or "://" in query
-            or any(ord(char) < 32 for char in query)
-            or re.search(
-                r"(?<!\d)\d{5,}(?!\d)|\b\d{1,3}(?:\.\d{1,3}){3}\b|(?:api.?key|token|password)\s*[:=]",
-                query,
-                re.I,
-            )
-        ):
-            raise DrawError("invalid_export")
+        validate_search_query(query)
         self.calls += 1
         sources = self.sources if sources is None else sources
         trace = {
@@ -418,6 +451,7 @@ class ReferenceClient:
             if not isinstance(results, list):
                 raise ValueError("Invalid search results")
             trace["returned"] = len(results[:5])
+            accepted_keys = set()
             for item in results[:5]:
                 url = item.get("url", "") if isinstance(item, dict) else ""
                 try:
@@ -428,17 +462,19 @@ class ReferenceClient:
                         {"url": display_url(url), "reason": "unsafe_url"}
                     )
                     continue
+                canonical = canonical_page_key(url)
                 reason = (
                     "source_or_path_not_allowed"
                     if not any(source.matches(parsed) for source in sources)
                     else "already_attempted"
-                    if url in self.seen
+                    if canonical in self.seen_keys
                     else "duplicate_result"
-                    if url in pages
+                    if canonical in accepted_keys
                     else ""
                 )
                 if not reason:
                     pages.append(url)
+                    accepted_keys.add(canonical)
                     # Collections remain eligible, after individual work reports.
                     title = str(item.get("title") or "")[:500]
                     collection = bool(
@@ -457,6 +493,7 @@ class ReferenceClient:
                     trace["filtered"].append(
                         {"url": display_url(url), "reason": reason}
                     )
+            self.seen_keys.update(accepted_keys)
             trace.update(
                 outcome="ok",
                 accepted=len(pages),
@@ -476,6 +513,7 @@ class ReferenceClient:
         """Confirm artwork association using scoped body elements or social metadata."""
         self.pages += 1
         self.seen.add(page_url)
+        self.seen_keys.add(canonical_page_key(page_url))
         page_url, media, body = await fetch_public(
             page_url, limit=512 * 1024, stage="page"
         )

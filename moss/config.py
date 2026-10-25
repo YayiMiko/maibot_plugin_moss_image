@@ -185,12 +185,12 @@ class DrawLimits(PluginConfigBase):
 
 
 class Draw(PluginConfigBase):
-    __ui_label__ = "高美学抽卡"
+    __ui_label__ = "模板抽卡"
     model_config = {**PluginConfigBase.model_config, "extra": "ignore"}
     enabled: bool = Field(
         default=False,
         json_schema_extra={"label": "启用抽卡"},
-        description="开启自动联网选图、内置审美评审与单张生图，无需人工选图或校准。",
+        description="开启自动联网选图、模板适用性审核与单张生图，无需人工选图或校准。",
     )
     tavily_api_key: str = Field(
         default="",

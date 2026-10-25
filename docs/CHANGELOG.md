@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Replace draw aesthetic ratings with a template-suitability contract: judge whether the actual image's composition, relationships and typography can be adapted, require a blueprint only when usable, and stop on the first usable reference. Remove personal profiles, score gates and separate quality booleans.
+- Prefer public X status posts for draw discovery, confirm the exact post with page metadata and syndication media, and reject profiles, trending pages, text-only posts, videos, avatars, tutorials, placeholder templates and obvious ads. Never use Tavily image results as the reference and never require X API or a browser login.
+- Keep X as the priority route but fall back to publisher sources with two shared searches, six work pages, two image URLs per page and three visual reviews. Canonicalize publisher URLs to collapse Behance locale/module duplicates and accept ArtStation author subdomains; preserve pending candidates and failure evidence.
 - Accept one complete JSON code fence before strict parsing, preserving duplicate/nonfinite-field rejection. Count every draw vision attempt, retain pending candidates after malformed reviews and distinguish invalid, rejected, mixed and unavailable outcomes without retrying refusals.
 - Prefer scoped Pentagram/It's Nice That article artwork over social thumbnails with a bounded metadata fallback. Record image provenance, prioritize individual work reports over explicit trend collections and separate provisional exploration from user requirements during visual review.
 
