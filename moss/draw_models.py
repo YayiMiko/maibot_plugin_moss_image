@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-RULES_VERSION = "draw-v1"
+RULES_VERSION = "draw-v2"
 
 
 class DrawError(RuntimeError):
@@ -31,13 +31,14 @@ class SearchDirection(StrictRecord):
 
     category: Literal["poster", "illustration"]
     query: str = Field(min_length=1, max_length=300)
+    design_intent: str = Field(min_length=1, max_length=1200)
 
 
 class Brief(SearchDirection):
     constraints: list[Constraint] = Field(max_length=24)
     reference_requirements: list[Constraint] = Field(max_length=12)
     creative_freedom: str = Field(min_length=1, max_length=2048)
-    alternatives: list[SearchDirection] = Field(min_length=1, max_length=3)
+    alternatives: list[SearchDirection] = Field(min_length=2, max_length=2)
 
 
 class Blueprint(StrictRecord):
@@ -48,7 +49,7 @@ class Blueprint(StrictRecord):
     light_palette: str = Field(min_length=1, max_length=2048)
     typography: str = Field(min_length=1, max_length=2048)
     medium_texture: str = Field(min_length=1, max_length=2048)
-    design_relationships: list[str] = Field(min_length=3, max_length=6)
+    design_relationships: list[str] = Field(min_length=1, max_length=6)
     remove_source_content: str = Field(min_length=1, max_length=2048)
     uncertainty: str = Field(max_length=1024)
 
@@ -56,8 +57,6 @@ class Blueprint(StrictRecord):
 class Review(StrictRecord):
     candidate_id: str = Field(pattern=r"^candidate-[1-3]$")
     rating: Literal["strong", "acceptable", "weak", "uncertain"]
-    positive_comparison: Literal["better", "comparable", "worse", "uncertain"] | None
-    negative_comparison: Literal["better", "comparable", "worse", "uncertain"] | None
     evidence: list[str] = Field(min_length=1, max_length=6)
     critical_flaws: list[str] = Field(max_length=6)
     fits_request: bool
@@ -71,12 +70,6 @@ class Review(StrictRecord):
         """Require independent quality, uncertainty and adaptation gates."""
         return (
             self.rating == "strong"
-            and (
-                self.positive_comparison is None
-                and self.negative_comparison is None
-                or self.positive_comparison in {"better", "comparable"}
-                and self.negative_comparison == "better"
-            )
             and not self.critical_flaws
             and self.fits_request
             and self.adaptable

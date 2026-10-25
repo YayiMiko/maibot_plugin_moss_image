@@ -1,7 +1,6 @@
 """Curation boundaries against real orchestration and completely offline services."""
 
 import asyncio
-import hashlib
 import io
 import json
 import socket
@@ -20,12 +19,10 @@ from moss.references import ReferenceError, cache_reference, normalize_image, sa
 
 @pytest.fixture
 def draw_setup(plugin, command, monkeypatch):
-    """One calibrated profile, three distinct work pages, deterministic fake models."""
+    """Distinct offline works and deterministic request-local models."""
     plugin.config.draw.enabled = True
-    plugin.config.draw.use_profile = True
     plugin.config.draw.tavily_api_key = "private-test-search-key"
-    root = plugin.ctx.paths.data_dir / "draw_profiles/default"
-    root.mkdir(parents=True)
+    monkeypatch.setattr("moss.draw.secrets.randbits", lambda _: 0)
     artworks = []
     for index in range(4):
         buffer = io.BytesIO()
@@ -39,46 +36,13 @@ def draw_setup(plugin, command, monkeypatch):
                 )
         image.save(buffer, "PNG")
         artworks.append(buffer.getvalue())
-    anchors = []
-    for index in range(4):
-        content = artworks[index]
-        name = f"anchor{index}.png"
-        (root / name).write_bytes(content)
-        anchors.append(
-            {
-                "file": name,
-                "sha256": hashlib.sha256(content).hexdigest(),
-                "reason": "Coherent hierarchy" if index < 2 else "Confused hierarchy",
-            }
+    sources = [
+        SourceRule(
+            domain=name, path_prefix="/works/", evidence="Offline publisher fixture"
         )
-    profile = {
-        "version": "offline-fixture",
-        "rules_version": "draw-v1",
-        "vision_model_task": plugin.config.vision.model_task,
-        "vision_model_name": plugin.config.vision.model_name,
-        "planning_model_task": plugin.config.planning.model_task,
-        "planning_model_name": plugin.config.planning.model_name,
-        "multimodal_verified": True,
-        "sources_verified": True,
-        "sources": [
-            {
-                "domain": name,
-                "path_prefix": "/works/",
-                "kind": "creator_verified",
-                "evidence": "Offline original publisher fixture",
-            }
-            for name in ["art.example.com", "design.example.com"]
-        ],
-        "categories": {
-            "illustration": {
-                "calibrated": True,
-                "positive": anchors[:2],
-                "negative": anchors[2:],
-            }
-        },
-    }
-    manifest = root / "manifest.json"
-    manifest.write_text(json.dumps(profile), encoding="utf-8")
+        for name in ["art.example.com", "design.example.com"]
+    ]
+    monkeypatch.setattr("moss.aesthetics.BUILTIN_SOURCES", tuple(sources))
     command["text"] = "/moss 抽卡 少女，单人，不要文字"
     state = {
         "downloads": [],
@@ -96,13 +60,18 @@ def draw_setup(plugin, command, monkeypatch):
     def http(url, **kwargs):
         if "payload" in kwargs:
             state["searches"] += 1
+            state.setdefault("queries", []).append(kwargs["payload"])
+            if state.get("search_error") == state["searches"]:
+                raise ReferenceError("timeout", stage="search", url=url)
             assert kwargs["key"] == "private-test-search-key"
             return (
                 url,
                 "application/json",
                 json.dumps(
                     {
-                        "results": []
+                        "results": state["result_sets"][state["searches"] - 1]
+                        if "result_sets" in state
+                        else []
                         if state.get("empty_results")
                         else [
                             {"url": f"https://art.example.com/works/{i}"}
@@ -113,6 +82,9 @@ def draw_setup(plugin, command, monkeypatch):
                 ).encode(),
             )
         if "/works/" in url:
+            state.setdefault("page_reads", []).append(url)
+            if url in state.get("page_failures", []):
+                raise ReferenceError("http_status", stage="page", url=url, status=403)
             return (
                 url,
                 "text/html",
@@ -126,7 +98,7 @@ def draw_setup(plugin, command, monkeypatch):
                 url=url + "?token=private-signed-token",
                 status=403,
             )
-        return url, "image/png", artworks[int(url[-5])]
+        return url, "image/png", artworks[int(url[-5]) % len(artworks)]
 
     async def generate(messages, **kwargs):
         state["requests"].append(messages)
@@ -155,17 +127,24 @@ def draw_setup(plugin, command, monkeypatch):
                 if state.get("poster")
                 else [],
                 "query": "curated editorial artwork",
+                "design_intent": "Central silhouette with open space",
                 "alternatives": [
+                    {
+                        "category": "poster" if state.get("poster") else "illustration",
+                        "query": "geometric expressive design",
+                        "design_intent": "Geometric rhythm and asymmetry",
+                    },
                     {
                         "category": "poster"
                         if state.get("poster")
                         else "poster"
                         if wide
                         else "illustration",
+                        "design_intent": "Cinematic scale and contrast",
                         "query": "expressive cinematic poster design"
                         if wide or state.get("poster")
                         else "expressive editorial color composition",
-                    }
+                    },
                 ],
             }
             if state.get("identity_locked") and state["brief_calls"] == 1:
@@ -189,20 +168,13 @@ def draw_setup(plugin, command, monkeypatch):
                     "response": "Private provider refusal",
                 }
             parts = messages[1]["content"]
-            assert sum(item["type"] == "image_url" for item in parts) == (
-                3 if plugin.config.draw.use_profile else 1
-            )
+            assert sum(item["type"] == "image_url" for item in parts) == 1
             current = json.loads(parts[0]["text"])
+            state.setdefault("review_briefs", []).append(current["brief"])
             rejected = state["reviews"] <= state["reject"]
             response = {
                 "candidate_id": current["candidate_id"],
                 "rating": "weak" if rejected else "strong",
-                "positive_comparison": ("worse" if rejected else "comparable")
-                if plugin.config.draw.use_profile
-                else None,
-                "negative_comparison": "better"
-                if plugin.config.draw.use_profile
-                else None,
                 "evidence": ["Clear silhouette and light-dark organization"],
                 "critical_flaws": [],
                 "fits_request": True,
@@ -277,6 +249,8 @@ def draw_setup(plugin, command, monkeypatch):
             if payload["brief"]["category"] == "poster":
                 summary = response["draft"]["caption"]
                 response.update(mode="layout", visible_texts=payload["fixed_texts"])
+                for binding in response["bindings"]:
+                    binding["item_index"] = 0
                 response["draft"] = {
                     "width": payload["width"],
                     "height": payload["height"],
@@ -306,7 +280,7 @@ def draw_setup(plugin, command, monkeypatch):
 
     monkeypatch.setattr("moss.references.safe_http", http)
     plugin.ctx.llm.generate.side_effect = generate
-    return state, profile, manifest
+    return state, sources, None
 
 
 def test_draw_first_eligible_submits_exactly_once_and_redacts_config(
@@ -472,80 +446,13 @@ def test_draw_verified_identity_is_in_final_prompt_without_expansion(
     asyncio.run(run())
 
 
-def test_draw_unverified_or_changed_profile_fails_without_network_or_llm(
-    plugin, command, draw_setup, comfy_transport
-):
-    state, profile, manifest = draw_setup
-    profile["multimodal_verified"] = False
-    manifest.write_text(json.dumps(profile), encoding="utf-8")
-
-    async def run():
-        await plugin.on_load()
-        await plugin.handle_moss(**command)
-        await asyncio.gather(*list(plugin.jobs.values()))
-        assert not state["downloads"] and not state["searches"] and not comfy_transport
-        plugin.ctx.llm.generate.assert_not_awaited()
-        profile["multimodal_verified"] = True
-        profile["vision_model_name"] = "changed-route"
-        manifest.write_text(json.dumps(profile), encoding="utf-8")
-        with pytest.raises(DrawError, match="uncalibrated"):
-            Aesthetics(plugin.store.data, plugin.config)
-        await plugin.on_unload()
-
-    asyncio.run(run())
-
-
-def test_draw_defaults_to_builtin_review_without_reading_personal_profile(
-    plugin, command, draw_setup, comfy_transport, monkeypatch
-):
-    state, profile, manifest = draw_setup
-    assert MossConfig().draw.use_profile is False
-    plugin.config.draw.use_profile = False
-    manifest.write_text(
-        "invalid personal profile that must be ignored", encoding="utf-8"
+def test_removed_profile_settings_are_ignored_and_absent_from_schema():
+    config = MossConfig.model_validate(
+        {"draw": {"use_profile": True, "profile": "old"}}
     )
-    fallback_sources = tuple(
-        SourceRule.model_validate({**item, "kind": "publisher_page"})
-        for item in profile["sources"]
-    )
-    monkeypatch.setattr("moss.aesthetics.BUILTIN_SOURCES", fallback_sources)
-    engine = Aesthetics(plugin.ctx.paths.data_dir, plugin.config)
-    assert engine.profile is None and set(engine.categories) == {
-        "poster",
-        "illustration",
-    }
-    manifest.unlink()
-
-    async def run():
-        await plugin.on_load()
-        await plugin.handle_moss(**command)
-        await asyncio.gather(*list(plugin.jobs.values()))
-        record = json.loads(
-            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
-        )
-        assert record["status"] == "sent", record
-        directory = plugin.store.runtime / record["task_id"] / "draw"
-        selection = json.loads(
-            (directory / "selection.json").read_text(encoding="utf-8")
-        )
-        assert (
-            selection["profile"] == "builtin-v1"
-            and not selection["personal_profile_enabled"]
-        )
-        reviews = json.loads((directory / "reviews.json").read_text(encoding="utf-8"))
-        assert (
-            reviews[0]["positive_comparison"] is None
-            and reviews[0]["negative_comparison"] is None
-        )
-        references = json.loads(
-            (directory / "references.json").read_text(encoding="utf-8")
-        )
-        assert references[0]["source_kind"] == "publisher_page"
-        assert plugin.ctx.llm.generate.await_count == 3 and len(state["downloads"]) == 1
-        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
-        await plugin.on_unload()
-
-    asyncio.run(run())
+    assert config.draw.model_dump() == MossConfig().draw.model_dump()
+    assert "use_profile" not in config.draw.model_json_schema()["properties"]
+    assert Aesthetics().version == "builtin-v2"
 
 
 def test_draw_disabled_attachment_and_style_scope_boundaries(plugin, command):
@@ -617,10 +524,8 @@ def test_reference_normalization_and_cache_never_follow_links(tmp_path):
 def test_draw_poster_compiles_real_layout_and_keeps_exact_copy(
     plugin, command, draw_setup, comfy_transport
 ):
-    state, profile, manifest = draw_setup
+    state, _, _ = draw_setup
     state["poster"] = True
-    profile["categories"]["poster"] = profile["categories"].pop("illustration")
-    manifest.write_text(json.dumps(profile), encoding="utf-8")
     command["text"] = "/moss 抽卡 少女，单人，海报标题“风起！”"
 
     async def run():
@@ -765,13 +670,8 @@ def test_draw_preparation_deadline_stops_before_gpu(
 def test_open_draw_randomizes_design_direction_before_search(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
-    state, profile, _ = draw_setup
-    plugin.config.draw.use_profile = False
-    monkeypatch.setattr(
-        "moss.aesthetics.BUILTIN_SOURCES",
-        tuple(SourceRule.model_validate(item) for item in profile["sources"]),
-    )
-    seeds = iter([0, 1])
+    state, _, _ = draw_setup
+    seeds = iter([1, 4])
     monkeypatch.setattr("moss.draw.secrets.randbits", lambda _: next(seeds))
     command["text"] = "/moss 抽卡 卡缇希娅"
 
@@ -826,6 +726,177 @@ def test_draw_empty_search_is_not_reported_as_aesthetic_failure(
             for search in discovery["searches"]
         )
         await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("cause", ["page_403", "rejected"])
+def test_draw_recovers_original_pool_and_direction_after_empty_supplement(
+    plugin, command, draw_setup, comfy_transport, monkeypatch, cause
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
+    state["result_sets"] = [
+        [{"url": f"https://art.example.com/works/{i}"} for i in range(2)],
+        [],
+    ]
+    if cause == "page_403":
+        state["page_failures"] = ["https://art.example.com/works/0"]
+    else:
+        state["reject"] = 1
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        assert state["page_reads"] == [
+            f"https://art.example.com/works/{i}" for i in range(2)
+        ]
+        assert state["searches"] == 2
+        if cause == "page_403":
+            assert state["queries"][0]["query"] == state["queries"][1]["query"]
+            assert "art.example.com" not in state["queries"][1]["include_domains"]
+            assert state["reviews"] == 1
+        else:
+            assert state["queries"][0]["query"] != state["queries"][1]["query"]
+            assert state["review_briefs"][0] == state["review_briefs"][1]
+        assert state["review_briefs"][-1]["query"] == state["queries"][0]["query"]
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_search_outage_does_not_discard_pending_work(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    state.update(search_error=2, page_failures=["https://art.example.com/works/0"])
+    monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        assert state["searches"] == 2 and state["reviews"] == 1
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("all_fail", [False, True])
+def test_draw_page_budget_is_independent_of_visual_review_budget(
+    plugin, command, draw_setup, comfy_transport, monkeypatch, all_fail
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
+    urls = [
+        f"https://{host}.example.com/works/{i}"
+        for i, host in enumerate(["art"] * 3 + ["design"] * 3)
+    ]
+    state["result_sets"] = [
+        [{"url": url} for url in urls[:3]],
+        [{"url": url} for url in urls[3:]],
+    ]
+    state["page_failures"] = urls if all_fail else urls[:4]
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert len(state["page_reads"]) <= 6 and state["searches"] == 2
+        if all_fail:
+            assert len(state["page_reads"]) == 6 and state["reviews"] == 0
+            assert (
+                record["error_kind"] == "reference_unreadable" and not comfy_transport
+            )
+        else:
+            assert record["status"] == "sent", record
+            assert state["reviews"] == 1
+            assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_reference_filters_report_reasons_and_retry_page_associated_images(monkeypatch):
+    from urllib.parse import urlsplit
+
+    from moss.aesthetics import BUILTIN_SOURCES
+    from moss.references import ReferenceClient
+
+    assert any(
+        source.matches(urlsplit("https://itsnicethat.com/features/a-real-work"))
+        for source in BUILTIN_SOURCES
+    )
+    assert not any(
+        source.matches(urlsplit("https://www.itsnicethat.com/features/"))
+        for source in BUILTIN_SOURCES
+    )
+    assert not any(
+        source.matches(
+            urlsplit("https://www.itsnicethat.com.evil.example/features/art")
+        )
+        for source in BUILTIN_SOURCES
+    )
+    image = io.BytesIO()
+    Image.new("RGB", (512, 768)).save(image, "PNG")
+    calls = []
+
+    def http(url, **kwargs):
+        calls.append(url)
+        if kwargs.get("payload") is not None:
+            return (
+                url,
+                "application/json",
+                json.dumps(
+                    {
+                        "results": [
+                            {"url": "https://www.itsnicethat.com"},
+                            {"url": "https://www.itsnicethat.com/features/a-real-work"},
+                            {"url": "http://private.example/a"},
+                        ]
+                    }
+                ).encode(),
+            )
+        if "/features/" in url:
+            return (
+                url,
+                "text/html",
+                b'<meta property="og:title" content="Art"><meta property="og:image" content="/broken.png"><meta name="twitter:image" content="/art.png">',
+            )
+        if "broken" in url:
+            raise ReferenceError(
+                "http_status", stage="image", url=url + "?token=secret", status=404
+            )
+        return url, "image/png", image.getvalue()
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        client = ReferenceClient(MossConfig().draw, BUILTIN_SOURCES)
+        pages = await client.search("graphic design")
+        assert len(pages) == 1
+        assert {item["reason"] for item in client.searches[0]["filtered"]} == {
+            "source_or_path_not_allowed",
+            "unsafe_url",
+        }
+        record, content = await client.candidate(pages[0], 1)
+        assert record["width"] == 512 and content
+        assert len(record["image_failures"]) == 1 and "secret" not in json.dumps(record)
+        assert len(calls) == 4
 
     asyncio.run(run())
 

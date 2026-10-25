@@ -284,7 +284,7 @@ class ReferenceClient:
         self.seen = set()
         self.searches = []
 
-    async def search(self, query: str) -> list[str]:
+    async def search(self, query: str, *, sources=None) -> list[str]:
         """Return only source-scoped work pages; aggregate image URLs are not proof."""
         if self.calls >= self.config.limits.search_budget:
             return []
@@ -301,6 +301,7 @@ class ReferenceClient:
         ):
             raise DrawError("invalid_export")
         self.calls += 1
+        sources = self.sources if sources is None else sources
         trace = {
             "query": query,
             "outcome": "failed",
@@ -308,6 +309,8 @@ class ReferenceClient:
             "accepted": 0,
             "rejected": 0,
             "pages": [],
+            "domains": sorted({source.domain for source in sources}),
+            "filtered": [],
         }
         self.searches.append(trace)
         try:
@@ -317,9 +320,7 @@ class ReferenceClient:
                     "query": query,
                     "search_depth": "basic",
                     "max_results": 5,
-                    "include_domains": sorted(
-                        {source.domain for source in self.sources}
-                    ),
+                    "include_domains": sorted({source.domain for source in sources}),
                     "include_answer": False,
                     "include_images": True,
                     "include_image_descriptions": True,
@@ -341,15 +342,26 @@ class ReferenceClient:
                     parsed = public_url(url)
                 except (ValueError, TypeError, DrawError):
                     trace["rejected"] += 1
+                    trace["filtered"].append(
+                        {"url": display_url(url), "reason": "unsafe_url"}
+                    )
                     continue
-                if (
-                    any(source.matches(parsed) for source in self.sources)
-                    and url not in self.seen
-                    and url not in pages
-                ):
+                reason = (
+                    "source_or_path_not_allowed"
+                    if not any(source.matches(parsed) for source in sources)
+                    else "already_attempted"
+                    if url in self.seen
+                    else "duplicate_result"
+                    if url in pages
+                    else ""
+                )
+                if not reason:
                     pages.append(url)
                 else:
                     trace["rejected"] += 1
+                    trace["filtered"].append(
+                        {"url": display_url(url), "reason": reason}
+                    )
             trace.update(
                 outcome="ok",
                 accepted=len(pages),
@@ -389,16 +401,27 @@ class ReferenceClient:
             raise ReferenceError(
                 "missing_artwork_metadata", stage="page", url=page_url, status=200
             )
-        image_url = urljoin(page_url, page.images[0])
-        image_url, _, content = await fetch_public(image_url, stage="image")
-        try:
-            normalized, width, height, signature = await asyncio.to_thread(
-                normalize_image, content
-            )
-        except DrawError:
-            raise ReferenceError(
-                "invalid_image", stage="decode", url=image_url, status=200
-            ) from None
+        image_failures = []
+        for image_path in page.images[:2]:
+            image_url = urljoin(page_url, image_path)
+            try:
+                image_url, _, content = await fetch_public(image_url, stage="image")
+                try:
+                    normalized, width, height, signature = await asyncio.to_thread(
+                        normalize_image, content
+                    )
+                except DrawError:
+                    raise ReferenceError(
+                        "invalid_image", stage="decode", url=image_url, status=200
+                    ) from None
+                break
+            except ReferenceError as exc:
+                image_failures.append(exc.details)
+                if len(image_failures) == min(2, len(page.images)):
+                    exc.details["image_failures"] = [
+                        dict(item) for item in image_failures
+                    ]
+                    raise
         record = {
             "id": f"candidate-{number}",
             "page": display_url(page_url),
@@ -413,6 +436,7 @@ class ReferenceClient:
             "height": height,
             "sha256": hashlib.sha256(normalized).hexdigest(),
             "signature": signature,
+            "image_failures": image_failures,
         }
         return record, normalized
 

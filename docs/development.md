@@ -12,18 +12,20 @@ only creators and configured library administrators may mutate an existing OC.
 Comic storyboards are internal data; export only official flat Layout fields.
 Draw is an explicit, opt-in text-to-image route: curated images are visual-analysis
 references only, never ComfyUI image inputs. Stop at the first eligible reference,
-attempt at most three works and submit one output. Personal taste profiles are
-optional and disabled by default: built-in criteria work without anchor files.
-Explicitly enabled profiles still require valid calibration and must never silently
-fall back. Preserve private key redaction and public-only bounded resource fetching.
+review at most three images, read at most six work pages and submit one output.
+Use automatic built-in visual criteria only; personal profiles, anchors and manual
+calibration are removed. Ignore obsolete profile configuration without reading or
+deleting old user files. Preserve private key redaction and public-only fetching.
 See aesthetic-draw.md. Real model/image acceptance remains separate from offline checks.
 Draw always excludes common style presets and fixed quality prefixes, including
 the all-style setting; preserve visual styles explicitly written in its request.
 Brief constraints must quote original user spans only. Brief and export share one
 bounded structural correction; provider refusal never triggers that correction.
 Keep target identity separate from reference discovery. Open draws randomize
-multiple visual directions before search; explicit reference themes stay grounded
-in original user spans. Keep the shared two-search/three-candidate limits. Record
+three visual directions before search without category quotas; explicit reference
+themes stay grounded in original user spans. Keep two searches and separate page/
+review ceilings. Preserve pending candidates with their original design direction;
+switch sources after reading failures and direction after aesthetic rejection. Record
 sanitized stage/HTTP evidence and never label unreadable inputs as aesthetic rejects.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve

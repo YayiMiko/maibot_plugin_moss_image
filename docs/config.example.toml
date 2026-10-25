@@ -34,8 +34,6 @@ default_application = "all" # generate: only generation; all: generation, comics
 [draw]
 enabled = false
 tavily_api_key = ""
-use_profile = false
-profile = "default"
 
 [draw.limits]
 prepare_timeout = 180
