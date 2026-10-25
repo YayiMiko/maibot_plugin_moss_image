@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Make personal draw profiles optional and disabled by default. Built-in category criteria review one candidate without anchors, using source-scoped ArtStation/Behance publication pages without claiming verified authorship or awards. Explicit profile mode retains calibration checks and anchor comparisons; missing or damaged profiles never silently fall back when enabled.
 - Add opt-in `/moss 抽卡` with source-scoped Tavily discovery, verified-page image associations, calibrated visual admission and blueprint extraction in one call, and official Caption/Layout adaptation. Stop at the first eligible reference, attempt at most three works, prepare within 180 seconds by default and submit one image through the existing delivery boundary.
 - Extend all-mode style applicability to draw, preserve explicit canvas or inherit the reference ratio, and retain verified character/explicit OC bindings. Add bounded public-only HTTPS fetching, private anchor import and reference retention, and exclude search credentials from all task snapshots. New draw remains disabled pending explicit source/model/aesthetic acceptance.
 - Bind candidate tags to independently queried original-name wiki aliases or existing explicit aliases before treating tag existence as identity verification. Resolve published alternate names even when the LLM returns Chinese or wrong-character candidates; cache source-name evidence without caching LLM guesses. Recognize the existing Cartethyia spelling variant without rewriting user descriptions.

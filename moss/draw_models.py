@@ -51,8 +51,8 @@ class Blueprint(StrictRecord):
 class Review(StrictRecord):
     candidate_id: str = Field(pattern=r"^candidate-[1-3]$")
     rating: Literal["strong", "acceptable", "weak", "uncertain"]
-    positive_comparison: Literal["better", "comparable", "worse", "uncertain"]
-    negative_comparison: Literal["better", "comparable", "worse", "uncertain"]
+    positive_comparison: Literal["better", "comparable", "worse", "uncertain"] | None
+    negative_comparison: Literal["better", "comparable", "worse", "uncertain"] | None
     evidence: list[str] = Field(min_length=1, max_length=6)
     critical_flaws: list[str] = Field(max_length=6)
     fits_request: bool
@@ -66,8 +66,12 @@ class Review(StrictRecord):
         """Require independent quality, uncertainty and adaptation gates."""
         return (
             self.rating == "strong"
-            and self.positive_comparison in {"better", "comparable"}
-            and self.negative_comparison == "better"
+            and (
+                self.positive_comparison is None
+                and self.negative_comparison is None
+                or self.positive_comparison in {"better", "comparable"}
+                and self.negative_comparison == "better"
+            )
             and not self.critical_flaws
             and self.fits_request
             and self.adaptable

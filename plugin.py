@@ -187,7 +187,7 @@ class MossPlugin(MaiBotPlugin):
         if action == "draw":
             if not config.draw.enabled:
                 await self.runner.notice(
-                    "高美学抽卡尚未启用，请先由维护者完成图源、视觉能力和审美校准。",
+                    "高美学抽卡尚未启用，请由维护者配置搜索和视觉模型后开启。",
                     stream,
                 )
                 return True, None, 2

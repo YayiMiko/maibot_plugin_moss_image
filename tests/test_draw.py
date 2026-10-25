@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 from PIL import Image, ImageDraw
 
-from moss.aesthetics import Aesthetics
+from moss.aesthetics import Aesthetics, SourceRule
 from moss.commands import parse_command
 from moss.config import MossConfig
 from moss.draw_models import DrawError
@@ -22,6 +22,7 @@ from moss.references import cache_reference, normalize_image, safe_http
 def draw_setup(plugin, command, monkeypatch):
     """One calibrated profile, three distinct work pages, deterministic fake models."""
     plugin.config.draw.enabled = True
+    plugin.config.draw.use_profile = True
     plugin.config.draw.tavily_api_key = "private-test-search-key"
     root = plugin.ctx.paths.data_dir / "draw_profiles/default"
     root.mkdir(parents=True)
@@ -148,14 +149,20 @@ def draw_setup(plugin, command, monkeypatch):
                     "response": "Private provider refusal",
                 }
             parts = messages[1]["content"]
-            assert sum(item["type"] == "image_url" for item in parts) == 3
+            assert sum(item["type"] == "image_url" for item in parts) == (
+                3 if plugin.config.draw.use_profile else 1
+            )
             current = json.loads(parts[0]["text"])
             rejected = state["reviews"] <= state["reject"]
             response = {
                 "candidate_id": current["candidate_id"],
                 "rating": "weak" if rejected else "strong",
-                "positive_comparison": "worse" if rejected else "comparable",
-                "negative_comparison": "better",
+                "positive_comparison": ("worse" if rejected else "comparable")
+                if plugin.config.draw.use_profile
+                else None,
+                "negative_comparison": "better"
+                if plugin.config.draw.use_profile
+                else None,
                 "evidence": ["Clear silhouette and light-dark organization"],
                 "critical_flaws": [],
                 "fits_request": True,
@@ -397,6 +404,59 @@ def test_draw_unverified_or_changed_profile_fails_without_network_or_llm(
         manifest.write_text(json.dumps(profile), encoding="utf-8")
         with pytest.raises(DrawError, match="uncalibrated"):
             Aesthetics(plugin.store.data, plugin.config)
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_defaults_to_builtin_review_without_reading_personal_profile(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, profile, manifest = draw_setup
+    assert MossConfig().draw.use_profile is False
+    plugin.config.draw.use_profile = False
+    manifest.write_text(
+        "invalid personal profile that must be ignored", encoding="utf-8"
+    )
+    fallback_sources = tuple(
+        SourceRule.model_validate({**item, "kind": "publisher_page"})
+        for item in profile["sources"]
+    )
+    monkeypatch.setattr("moss.aesthetics.BUILTIN_SOURCES", fallback_sources)
+    engine = Aesthetics(plugin.ctx.paths.data_dir, plugin.config)
+    assert engine.profile is None and set(engine.categories) == {
+        "poster",
+        "illustration",
+    }
+    manifest.unlink()
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        directory = plugin.store.runtime / record["task_id"] / "draw"
+        selection = json.loads(
+            (directory / "selection.json").read_text(encoding="utf-8")
+        )
+        assert (
+            selection["profile"] == "builtin-v1"
+            and not selection["personal_profile_enabled"]
+        )
+        reviews = json.loads((directory / "reviews.json").read_text(encoding="utf-8"))
+        assert (
+            reviews[0]["positive_comparison"] is None
+            and reviews[0]["negative_comparison"] is None
+        )
+        references = json.loads(
+            (directory / "references.json").read_text(encoding="utf-8")
+        )
+        assert references[0]["source_kind"] == "publisher_page"
+        assert plugin.ctx.llm.generate.await_count == 3 and len(state["downloads"]) == 1
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
         await plugin.on_unload()
 
     asyncio.run(run())

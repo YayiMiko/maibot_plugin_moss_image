@@ -76,7 +76,7 @@ class DrawPlanner:
         planner = Planner(
             SimpleNamespace(llm=budget), self.planner.skill, self.planner.resolver
         )
-        client = ReferenceClient(config.draw, profile.profile.sources)
+        client = ReferenceClient(config.draw, profile.sources)
         rng_seed = secrets.randbits(63)
         rng = random.Random(rng_seed)
         references, reviews = [], []
@@ -125,7 +125,7 @@ class DrawPlanner:
                 "Prepare an image art-direction/search brief, not a finished prompt. Return only JSON matching: "
                 + json.dumps(Brief.model_json_schema())
                 + " Every constraints.source must be an exact substring of request. Include all explicit requirements; never turn creative freedom into a hard requirement. "
-                "A bare character name leaves theme, composition and medium open; choose one of the calibrated categories. "
+                "A bare character name leaves theme, composition and medium open; choose one of the available categories. "
                 "Search for excellent visual design beyond the requested character's fan art: curated design, original game/movie key art, editorial illustration or the requested historical art topic. "
                 "Provide one precise query and one alternate only. Include relevant current cultural work when discoverable, without inventing current events. "
                 "Queries must be public art keywords only; exclude personal IDs, addresses, credentials and user-specific private data. "
@@ -135,11 +135,7 @@ class DrawPlanner:
                     {
                         "request": request.prompt,
                         "style": request.style_prompt,
-                        "categories": [
-                            name
-                            for name, category in profile.profile.categories.items()
-                            if category.calibrated
-                        ],
+                        "categories": profile.categories,
                         "date": time.strftime("%Y-%m-%d"),
                     },
                     ensure_ascii=False,
@@ -153,10 +149,7 @@ class DrawPlanner:
                 raise DrawError("invalid_export")
             if not brief.style_compatible:
                 raise DrawError("style_conflict")
-            if (
-                brief.category not in profile.profile.categories
-                or not profile.profile.categories[brief.category].calibrated
-            ):
+            if brief.category not in profile.categories:
                 raise DrawError("uncalibrated")
             await asyncio.to_thread(
                 atomic_write, directory / "brief.json", brief.model_dump()
@@ -267,7 +260,8 @@ class DrawPlanner:
                     "sha256": candidate["sha256"],
                     "reason": "first_eligible",
                     "attempts": attempts,
-                    "profile": profile.profile.version,
+                    "profile": profile.version,
+                    "personal_profile_enabled": config.draw.use_profile,
                 },
             )
             identities = {}

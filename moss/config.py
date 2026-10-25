@@ -189,7 +189,7 @@ class Draw(PluginConfigBase):
     enabled: bool = Field(
         default=False,
         json_schema_extra={"label": "启用抽卡"},
-        description="完成图源、视觉能力与审美校准后启用；一次只生成一张图。",
+        description="开启联网选图与单张生图；默认按内置美学规则审核。个人档案可另行启用。",
     )
     tavily_api_key: str = Field(
         default="",
@@ -199,10 +199,19 @@ class Draw(PluginConfigBase):
         json_schema_extra={"input_type": "password", "label": "Tavily API Key"},
         description="Tavily 搜索凭据；不会读取其他插件或写入任务快照。",
     )
+    use_profile: bool = Field(
+        default=False,
+        json_schema_extra={"label": "使用个人审美档案"},
+        description="默认关闭：按内置美学规则审核，无需正反例。开启后必须提供有效档案并完成校准。",
+    )
     profile: str = Field(
         default="default",
         pattern=r"^[a-zA-Z0-9_-]{1,40}$",
-        json_schema_extra={"label": "审美档案"},
+        json_schema_extra={
+            "label": "审美档案",
+            "depends_on": "draw.use_profile",
+            "depends_value": True,
+        },
         description="私有 draw_profiles/ 下的已校准审美档案名称。",
     )
     limits: DrawLimits = Field(
