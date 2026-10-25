@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-RULES_VERSION = "draw-v2"
+RULES_VERSION = "draw-v3"
 
 
 class DrawError(RuntimeError):

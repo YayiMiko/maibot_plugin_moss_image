@@ -170,7 +170,13 @@ def draw_setup(plugin, command, monkeypatch):
             parts = messages[1]["content"]
             assert sum(item["type"] == "image_url" for item in parts) == 1
             current = json.loads(parts[0]["text"])
-            state.setdefault("review_briefs", []).append(current["brief"])
+            state.setdefault("review_briefs", []).append(
+                {
+                    **current["exploration"],
+                    "constraints": current["target_requirements"],
+                    "reference_requirements": current["reference_requirements"],
+                }
+            )
             rejected = state["reviews"] <= state["reject"]
             response = {
                 "candidate_id": current["candidate_id"],
@@ -352,6 +358,120 @@ def test_draw_rejects_then_stops_at_second_and_preserves_explicit_canvas(
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("first_output", ["fenced_rejection", "malformed"])
+def test_draw_review_format_failure_recovers_pending_candidate(
+    plugin, command, draw_setup, comfy_transport, monkeypatch, first_output
+):
+    state, _, _ = draw_setup
+    state.update(
+        reject=1,
+        result_sets=[
+            [{"url": f"https://art.example.com/works/{i}"} for i in range(2)],
+            [],
+        ],
+    )
+    monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
+    generate = plugin.ctx.llm.generate.side_effect
+
+    async def wrapped(messages, **kwargs):
+        result = await generate(messages, **kwargs)
+        if (
+            messages[0]["content"].startswith("You are a visual art editor")
+            and state["reviews"] == 1
+        ):
+            result["response"] = (
+                "```json\n" + result["response"] + "\n```"
+                if first_output == "fenced_rejection"
+                else "{invalid JSON"
+            )
+        return result
+
+    plugin.ctx.llm.generate.side_effect = wrapped
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        directory = plugin.store.runtime / record["task_id"] / "draw"
+        reviews = json.loads((directory / "reviews.json").read_text(encoding="utf-8"))
+        assert [item["candidate_id"] for item in reviews] == [
+            "candidate-1",
+            "candidate-2",
+        ]
+        assert reviews[0]["outcome"] == (
+            "rejected" if first_output == "fenced_rejection" else "invalid_review"
+        )
+        assert (
+            json.loads((directory / "validation.json").read_text(encoding="utf-8"))[
+                "review_calls"
+            ]
+            == 2
+        )
+        assert state["review_briefs"][0] == state["review_briefs"][1]
+        assert (
+            state["reviews"] == 2
+            and sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        )
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["invalid_review", "mixed_review_failure", "vision_unavailable", "transport_error"],
+)
+def test_draw_counts_failed_reviews_and_reports_actual_failure(
+    plugin, command, draw_setup, comfy_transport, failure
+):
+    state, _, _ = draw_setup
+    state["reject"] = 1 if failure == "mixed_review_failure" else 0
+    generate = plugin.ctx.llm.generate.side_effect
+
+    async def wrapped(messages, **kwargs):
+        result = await generate(messages, **kwargs)
+        if messages[0]["content"].startswith("You are a visual art editor"):
+            if failure == "transport_error":
+                raise OSError("Private provider transport error")
+            if failure == "vision_unavailable":
+                return {"success": False, "response": ""}
+            if failure != "mixed_review_failure" or state["reviews"] > 1:
+                result["response"] = '{"candidate_id":"candidate-999"}'
+        return result
+
+    plugin.ctx.llm.generate.side_effect = wrapped
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["error_kind"] == (
+            "vision_unavailable" if failure == "transport_error" else failure
+        ), record
+        directory = plugin.store.runtime / record["task_id"] / "draw"
+        validation = json.loads(
+            (directory / "validation.json").read_text(encoding="utf-8")
+        )
+        assert (
+            validation["review_calls"]
+            == state["reviews"]
+            == (1 if failure in {"vision_unavailable", "transport_error"} else 3)
+        )
+        assert validation["repair_used"] is False and not comfy_transport
+        if failure == "mixed_review_failure":
+            assert "部分候选" in plugin.ctx.send.text.call_args.args[0]
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("failure", ["reject", "broken", "blocked"])
 def test_draw_never_lowers_quality_or_resubmits_after_failure(
     plugin, command, draw_setup, comfy_transport, failure
@@ -452,7 +572,7 @@ def test_removed_profile_settings_are_ignored_and_absent_from_schema():
     )
     assert config.draw.model_dump() == MossConfig().draw.model_dump()
     assert "use_profile" not in config.draw.model_json_schema()["properties"]
-    assert Aesthetics().version == "builtin-v2"
+    assert Aesthetics().version == "builtin-v3"
 
 
 def test_draw_disabled_attachment_and_style_scope_boundaries(plugin, command):
@@ -897,6 +1017,88 @@ def test_reference_filters_report_reasons_and_retry_page_associated_images(monke
         assert record["width"] == 512 and content
         assert len(record["image_failures"]) == 1 and "secret" not in json.dumps(record)
         assert len(calls) == 4
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("publisher", ["pentagram", "itsnicethat"])
+@pytest.mark.parametrize("broken_body", [False, True])
+def test_reference_prefers_scoped_body_art_and_retains_metadata_fallback(
+    monkeypatch, publisher, broken_body
+):
+    from moss.aesthetics import BUILTIN_SOURCES
+    from moss.references import ReferenceClient
+
+    if publisher == "pentagram":
+        page_url = "https://www.pentagram.com/work/40-years-of-storefront-for-art-and-architecture/story"
+        artwork = "https://pentagram-production.imgix.net/art/5A.png"
+        element = f'<figure class="workMedia"><picture><img class="workMedia__img" data-src="{artwork}?w=640"></picture></figure>'
+    else:
+        page_url = "https://www.itsnicethat.com/articles/a-work"
+        artwork = "https://m.itsnicethat.com/original_images/art.jpg"
+        element = f'<div><img src="{artwork}?class=w828"><img src="{artwork}?class=w1080"></div>'
+    metadata = "https://images.example.com/social.jpg"
+    html = (
+        f'<meta property="og:title" content="Art"><meta property="og:image" content="{metadata}">'
+        f'<header>{element}</header><article><aside>{element}</aside><img src="https://unrelated.example.com/not-art.png">{element}</article><footer>{element}</footer>'
+    )
+    image = io.BytesIO()
+    Image.new("RGB", (512, 768)).save(image, "PNG")
+    calls = []
+
+    def http(url, **kwargs):
+        calls.append(url)
+        if url == page_url:
+            return url, "text/html", html.encode()
+        if broken_body and url.startswith(artwork):
+            raise ReferenceError("http_status", stage="image", url=url, status=404)
+        return url, "image/png", image.getvalue()
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        client = ReferenceClient(MossConfig().draw, BUILTIN_SOURCES)
+        record, content = await client.candidate(page_url, 1)
+        assert content and calls[1].startswith(artwork)
+        assert record["image_origin"] == (
+            "social_metadata" if broken_body else "article_artwork"
+        )
+        assert record["image"] == (metadata if broken_body else artwork)
+        assert len(calls) == (3 if broken_body else 2)
+        assert len(record["image_failures"]) == int(broken_body)
+
+    asyncio.run(run())
+
+
+def test_draw_prioritizes_single_work_before_trend_collection(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
+    state["result_sets"] = [
+        [
+            {
+                "url": "https://art.example.com/works/0",
+                "title": "Graphic design trends 2026",
+            },
+            {
+                "url": "https://art.example.com/works/1",
+                "title": "A new poster by a design studio",
+            },
+        ]
+    ]
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        assert state["page_reads"] == ["https://art.example.com/works/1"]
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
 
     asyncio.run(run())
 

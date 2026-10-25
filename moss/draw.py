@@ -83,6 +83,7 @@ class DrawPlanner:
         rng_seed = secrets.randbits(63)
         rng = random.Random(rng_seed)
         references, reviews = [], []
+        review_calls = 0
         status = "failed"
         identity_task = None
         repair_used = False
@@ -276,7 +277,7 @@ class DrawPlanner:
             recent_pages = {
                 item["page"] for item in recent if item["scope"] == record["scope"]
             }
-            while client.pages < 6 and len(reviews) < 3:
+            while client.pages < 6 and review_calls < 3:
                 if (
                     need_search or not pool
                 ) and client.calls < config.draw.limits.search_budget:
@@ -312,6 +313,7 @@ class DrawPlanner:
                     key=lambda item: (
                         urlsplit(item[0]).hostname.removeprefix("www.") in failed_hosts,
                         item[1].query != direction.query,
+                        client.page_priorities.get(item[0], 0),
                         urlsplit(item[0]).hostname.removeprefix("www.")
                         in attempted_hosts,
                         display_url(item[0]) in recent_pages,
@@ -335,7 +337,7 @@ class DrawPlanner:
                 record["status"] = "fetching_references"
                 await self.store.save(record)
                 try:
-                    candidate, content = await client.candidate(page, len(reviews) + 1)
+                    candidate, content = await client.candidate(page, review_calls + 1)
                 except DrawError as exc:
                     failure = (
                         exc.details
@@ -372,10 +374,33 @@ class DrawPlanner:
                     continue
                 record["status"] = "reviewing_aesthetics"
                 await self.store.save(record)
-                review = await policy.review(
-                    planner, brief, request, candidate, content, config.vision, capture
+                review_calls += 1
+                try:
+                    review = await policy.review(
+                        planner,
+                        brief,
+                        request,
+                        candidate,
+                        content,
+                        config.vision,
+                        capture,
+                    )
+                except DrawError as exc:
+                    candidate["outcome"] = exc.reason
+                    reviews.append(
+                        {"candidate_id": candidate["id"], "outcome": exc.reason}
+                    )
+                    if exc.reason == "invalid_review":
+                        # Malformed output consumes a review, without discarding pending works.
+                        direction = candidate_direction
+                        continue
+                    raise
+                reviews.append(
+                    {
+                        **review.model_dump(exclude={"blueprint"}),
+                        "outcome": "eligible" if review.eligible else "rejected",
+                    }
                 )
-                reviews.append(review.model_dump(exclude={"blueprint"}))
                 if not review.eligible:
                     candidate["outcome"] = "rejected"
                     direction = next(
@@ -398,11 +423,17 @@ class DrawPlanner:
                         if search_failed
                         else "no_reference_results"
                     )
-                if not reviews:
+                if not review_calls:
                     raise DrawError(
                         "reference_unreadable"
                         if all(item["outcome"] == "unreadable" for item in references)
                         else "no_compatible_reference"
+                    )
+                if any(item["outcome"] == "invalid_review" for item in reviews):
+                    raise DrawError(
+                        "mixed_review_failure"
+                        if any(item["outcome"] == "rejected" for item in reviews)
+                        else "invalid_review"
                     )
                 raise DrawError("no_eligible_reference")
             candidate, content, blueprint = chosen
@@ -438,7 +469,7 @@ class DrawPlanner:
                     "sha256": candidate["sha256"],
                     "reason": "first_eligible",
                     "attempts": client.pages,
-                    "review_calls": len(reviews),
+                    "review_calls": review_calls,
                     "policy": policy.version,
                 },
             )
@@ -747,7 +778,7 @@ class DrawPlanner:
                         "model_calls": budget.calls,
                         "search_calls": client.calls,
                         "attempts": client.pages,
-                        "review_calls": len(reviews),
+                        "review_calls": review_calls,
                         "repair_used": repair_used,
                         "elapsed_seconds": time.monotonic() - started,
                     },

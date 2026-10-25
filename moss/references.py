@@ -216,12 +216,28 @@ def safe_http(url: str, *, payload=None, key="", limit=MAX_IMAGE, stage="fetch")
 
 
 class WorkPage(HTMLParser):
-    """Read publisher-declared artwork metadata without executing website code."""
+    """Read scoped publisher artwork elements, with social metadata as fallback."""
 
-    def __init__(self, text):
+    def __init__(self, text, url=""):
+        """Parse bounded HTML without fetching or executing embedded content.
+
+        Args:
+            text: Publisher HTML already limited by the page-fetch boundary.
+            url: Final publisher URL used to enable known article selectors.
+        """
         super().__init__(convert_charrefs=True)
-        self.images, self.title, self.author = [], "", ""
+        self.url, self.title, self.author = url, "", ""
+        self.body_images, self.social_images, self.image_origins = [], [], {}
+        self.stack = []
         self.feed(text)
+        # Keep one body artwork and one metadata fallback within the two-fetch ceiling.
+        ordered = (
+            self.body_images[:1]
+            + self.social_images[:1]
+            + self.body_images[1:]
+            + self.social_images[1:]
+        )
+        self.images = list(dict.fromkeys(ordered))[:2]
 
     def handle_starttag(self, tag, attrs):
         fields = dict(attrs)
@@ -232,12 +248,76 @@ class WorkPage(HTMLParser):
             "og:image:secure_url",
             "twitter:image",
         }:
-            if content and content not in self.images:
-                self.images.append(content)
+            if (
+                content
+                and content not in self.social_images
+                and len(self.social_images) < 4
+            ):
+                self.social_images.append(content)
+                self.image_origins.setdefault(content, "social_metadata")
         if tag == "meta" and name == "og:title":
             self.title = content[:300]
         if tag == "meta" and name in {"author", "article:author"}:
             self.author = content[:200]
+        if tag == "img" and len(self.body_images) < 8:
+            source = fields.get("data-src") or fields.get("src") or ""
+            try:
+                host = urlsplit(self.url).hostname
+                image = urlsplit(urljoin(self.url, source))
+            except ValueError:
+                source, host = "", None
+            in_article = any(element == "article" for element, _ in self.stack)
+            outside_navigation = not any(
+                element in {"nav", "aside", "header", "footer"}
+                for element, _ in self.stack
+            )
+            associated = (
+                source
+                and in_article
+                and outside_navigation
+                and (
+                    host in {"pentagram.com", "www.pentagram.com"}
+                    and "workMedia__img" in fields.get("class", "").split()
+                    and any(
+                        element == "figure" and "workMedia" in classes
+                        for element, classes in self.stack
+                    )
+                    and image.hostname == "pentagram-production.imgix.net"
+                    or host in {"itsnicethat.com", "www.itsnicethat.com"}
+                    and image.hostname == "m.itsnicethat.com"
+                    and image.path.startswith("/original_images/")
+                )
+            )
+            if associated and not any(
+                urlsplit(urljoin(self.url, old)).path == image.path
+                for old in self.body_images
+            ):
+                self.body_images.append(source)
+                self.image_origins[source] = "article_artwork"
+        if tag not in {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
+        }:
+            self.stack.append((tag, fields.get("class", "").split()))
+
+    def handle_endtag(self, tag):
+        """Close the matching scope even when publisher markup omits inner closes."""
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
 
 
 def normalize_image(content: bytes, edge=1536):
@@ -283,6 +363,7 @@ class ReferenceClient:
         self.calls, self.pages = 0, 0
         self.seen = set()
         self.searches = []
+        self.page_priorities = {}
 
     async def search(self, query: str, *, sources=None) -> list[str]:
         """Return only source-scoped work pages; aggregate image URLs are not proof."""
@@ -311,6 +392,7 @@ class ReferenceClient:
             "pages": [],
             "domains": sorted({source.domain for source in sources}),
             "filtered": [],
+            "page_types": {},
         }
         self.searches.append(trace)
         try:
@@ -357,6 +439,19 @@ class ReferenceClient:
                 )
                 if not reason:
                     pages.append(url)
+                    # Collections remain eligible, after individual work reports.
+                    title = str(item.get("title") or "")[:500]
+                    collection = bool(
+                        re.search(
+                            r"\b(?:trends?|round[ -]?ups?|round[ -]?up|(?:top|best)\s+\d+)\b|趋势|合集|盘点",
+                            title,
+                            re.I,
+                        )
+                    )
+                    self.page_priorities[url] = int(collection)
+                    trace["page_types"][display_url(url)] = (
+                        "collection" if collection else "work_or_article"
+                    )
                 else:
                     trace["rejected"] += 1
                     trace["filtered"].append(
@@ -378,7 +473,7 @@ class ReferenceClient:
             raise DrawError("search_unavailable") from None
 
     async def candidate(self, page_url: str, number: int):
-        """Confirm a page-image association using the publisher's own metadata."""
+        """Confirm artwork association using scoped body elements or social metadata."""
         self.pages += 1
         self.seen.add(page_url)
         page_url, media, body = await fetch_public(
@@ -396,7 +491,7 @@ class ReferenceClient:
             raise ReferenceError(
                 "unexpected_page_type", stage="page", url=page_url, status=200
             )
-        page = WorkPage(body.decode("utf-8", errors="replace"))
+        page = WorkPage(body.decode("utf-8", errors="replace"), page_url)
         if not page.images or not page.title:
             raise ReferenceError(
                 "missing_artwork_metadata", stage="page", url=page_url, status=200
@@ -437,6 +532,7 @@ class ReferenceClient:
             "sha256": hashlib.sha256(normalized).hexdigest(),
             "signature": signature,
             "image_failures": image_failures,
+            "image_origin": page.image_origins[image_path],
         }
         return record, normalized
 

@@ -245,6 +245,7 @@ class TaskRunner:
                     "vision_blocked": "视觉模型拒绝了本次请求，没有提交生图。",
                     "vision_unavailable": "视觉审核未完成，请检查视觉模型配置；没有提交生图。",
                     "invalid_review": "视觉模型未返回有效的审美评审结果，没有提交生图。",
+                    "mixed_review_failure": "部分候选未通过审美评审，其余评审结果无法解析，没有提交生图。",
                     "planning_blocked": "规划模型拒绝了本次请求，没有提交生图。",
                     "invalid_brief": "抽卡简报规划未通过校验，一次纠正后仍未完成；尚未搜索参考图或提交生图。",
                     "brief_unavailable": "抽卡简报模型未返回可用结果，尚未搜索参考图或提交生图。",

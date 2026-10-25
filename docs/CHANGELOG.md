@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Accept one complete JSON code fence before strict parsing, preserving duplicate/nonfinite-field rejection. Count every draw vision attempt, retain pending candidates after malformed reviews and distinguish invalid, rejected, mixed and unavailable outcomes without retrying refusals.
+- Prefer scoped Pentagram/It's Nice That article artwork over social thumbnails with a bounded metadata fallback. Record image provenance, prioritize individual work reports over explicit trend collections and separate provisional exploration from user requirements during visual review.
+
 - Redesign draw as automatic curation without personal taste profiles, anchors, calibration or import tooling; ignore obsolete configuration fields without touching old user data.
 - Preserve a request-local candidate pool with each work's design intent. Recover pending works after empty/failed supplemental searches, change sources after read failures and explore a new direction after visual rejection.
 - Separate six work-page attempts from three visual reviews, retain two searches and the existing shared model/deadline limits. Prefer editorial sources, accept explicit bare-domain aliases and creative features, report filtered result reasons and try at most two page-associated image URLs.

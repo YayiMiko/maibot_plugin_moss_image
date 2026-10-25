@@ -67,7 +67,7 @@ BUILTIN_SOURCES = tuple(
 class Aesthetics:
     """Apply versioned built-in criteria to the current work and explicit request."""
 
-    version = "builtin-v2"
+    version = "builtin-v3"
     categories = ("poster", "illustration")
 
     def __init__(self):
@@ -98,7 +98,19 @@ class Aesthetics:
                 "text": json.dumps(
                     {
                         "request": request.prompt,
-                        "brief": brief.model_dump(exclude={"alternatives"}),
+                        "target_requirements": [
+                            item.model_dump() for item in brief.constraints
+                        ],
+                        "reference_requirements": [
+                            item.model_dump() for item in brief.reference_requirements
+                        ],
+                        "exploration": brief.model_dump(
+                            exclude={
+                                "alternatives",
+                                "constraints",
+                                "reference_requirements",
+                            }
+                        ),
                         "candidate_id": record["id"],
                         "canvas": {"width": request.width, "height": request.height}
                         if request.canvas_explicit
@@ -127,12 +139,19 @@ class Aesthetics:
             "fits_request concerns explicit reference themes/medium in reference_requirements, not target identity. "
             "Different people, outfits or a different number of subjects are allowed if composition can be adapted "
             "to every explicit target requirement. style_compatible checks only style explicitly requested by the user. "
+            "HARD REQUIREMENTS are only the original request and its quoted target_requirements/reference_requirements. "
+            "exploration is a provisional search suggestion, NEVER an additional hard requirement. "
+            "A bare character request leaves reference theme, medium and subject count open. "
+            "A purely typographic or abstract poster may qualify if its design is strong and can be adapted to the target. "
+            "Missing a person or the target character in the reference is NOT a critical flaw by itself. "
+            "Judge complete_artwork from the actual artifact, not whether it already depicts the target. "
             "There is no common style preset. Never invent extra style restrictions. "
             "For qualifying artwork return a reconstruction-level ORIGINAL blueprint: composition, positions and "
             "subject relationships, light/palette, typography, medium/materials, source names/brands/text to remove, "
             "uncertain details and 1-6 valuable transferable design relationships. Minimal work may need only one. "
             "Do not pretend the target character is present. For nonqualifying work blueprint=null. "
-            "Never invent unreadable lettering, identities, authors, dates or sources. Return only JSON matching: "
+            "Never invent unreadable lettering, identities, authors, dates or sources. Return one bare JSON object, "
+            "starting with { and ending with }, with no Markdown fences or explanation, matching: "
             + json.dumps(Review.model_json_schema())
         )
         try:
@@ -143,13 +162,18 @@ class Aesthetics:
                 capture,
                 "draw_review",
             )
-            review = Review.model_validate(planner.skill.parse(raw))
-            if review.candidate_id != record["id"]:
-                raise ValueError("Candidate ID mismatch")
-            return review
         except PlanningError as exc:
             raise DrawError(
                 "vision_blocked" if exc.reason == "blocked" else "vision_unavailable"
             ) from None
+        except DrawError:
+            raise
+        except Exception:
+            raise DrawError("vision_unavailable") from None
+        try:
+            review = Review.model_validate(planner.skill.parse(raw))
+            if review.candidate_id != record["id"]:
+                raise ValueError("Candidate ID mismatch")
+            return review
         except (ValueError, TypeError, KeyError, RecursionError):
             raise DrawError("invalid_review") from None

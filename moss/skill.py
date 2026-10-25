@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +68,13 @@ class OfficialSkill:
         self.revision = manifest["moss_skill"]["commit"]
 
     def parse(self, text: str):
-        """Reject duplicate fields and nonfinite numbers in untrusted JSON."""
+        """Unwrap one complete JSON fence, retaining strict JSON validation."""
+        text = text.strip()
+        fenced = re.fullmatch(
+            r"```(?:json)?[ \t]*\r?\n(.*?)\r?\n```", text, re.S | re.I
+        )
+        if fenced:
+            text = fenced[1]
         return json.loads(
             text,
             object_pairs_hook=self.compiler.unique_object,

@@ -99,12 +99,31 @@ def test_invalid_layouts_are_rejected(change):
 
 
 @pytest.mark.parametrize(
-    "text", ['{"caption":"a","caption":"b"}', '{"caption":NaN}', "[]"]
+    "text",
+    [
+        '{"caption":"a","caption":"b"}',
+        '{"caption":NaN}',
+        "[]",
+        '```json\n{"caption":"a","caption":"b"}\n```',
+        '```json\n{"caption":NaN}\n```',
+        'Explanation\n```json\n{"caption":"a"}\n```',
+        '```json\n{"caption":"a"}\n```\nMore text',
+        '```json\n{"caption":"a"}\n```\n```json\n{}\n```',
+        '```json\n{"caption":"a"}',
+    ],
 )
 def test_json_errors_do_not_silently_drop_data(text):
     skill = OfficialSkill()
     with pytest.raises(ValueError):
         skill.compile(skill.parse(text), 1024, 1024)
+
+
+@pytest.mark.parametrize("label", ["json", ""])
+def test_one_complete_json_fence_preserves_content(label):
+    skill = OfficialSkill()
+    assert skill.parse(
+        f'  ```{label}\r\n{{"caption":"日本語 ``` inside"}}\r\n```  '
+    ) == {"caption": "日本語 ``` inside"}
 
 
 def test_caption_keeps_literal_wording_and_cannot_replace_layout():

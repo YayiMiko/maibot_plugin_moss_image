@@ -24,8 +24,12 @@ bounded structural correction; provider refusal never triggers that correction.
 Keep target identity separate from reference discovery. Open draws randomize
 three visual directions before search without category quotas; explicit reference
 themes stay grounded in original user spans. Keep two searches and separate page/
-review ceilings. Preserve pending candidates with their original design direction;
-switch sources after reading failures and direction after aesthetic rejection. Record
+review ceilings. Preserve pending candidates with their original design direction.
+Count malformed and failed vision calls toward the three-review ceiling; never
+retry provider refusals. Accept only one complete JSON fence before strict parsing.
+Prefer scoped body artwork over social metadata, keeping the two-fetch page ceiling.
+Treat exploration suggestions separately from original user constraints in reviews.
+Switch sources after reading failures and direction after aesthetic rejection. Record
 sanitized stage/HTTP evidence and never label unreadable inputs as aesthetic rejects.
 
 Official MOSS skill resources and compiler are vendored unchanged; preserve
