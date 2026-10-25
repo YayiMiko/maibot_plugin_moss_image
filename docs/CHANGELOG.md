@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Preserve blueprint subject/layer relationships, typography occlusion, cuts, scale contrast and dense/open rhythm in draw adaptation; translate unknown secondary figures into non-identity graphic layers instead of simplifying multi-layer references to a centered subject with a clean title band and background.
+
 ## v0.2.1 — 2026-10-26
 
 - Remove draw export self-certification gates: model keep/replace notes and coverage prose no longer need to appear verbatim in captions. Keep objective Canvas/Layout compilation, identity bindings, explicit fixed text, subject count and official schema checks; carry design relationships through the blueprint and adaptation prompt.

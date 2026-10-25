@@ -58,7 +58,11 @@ Record sanitized stage/HTTP evidence and never label unreadable inputs as
 template-unusable. Mixed failures use a neutral user message.
 Draw export may reject only objective structure, official compilation, verified
 identity binding, explicit user text/count and canvas errors; never require model
-self-certifying prose. Do not invent release dates, prices, awards, sales, platform
+self-certifying prose. In adaptation, preserve blueprint subject/layer relationships,
+typography occlusion, cuts, scale contrast and dense/open rhythm; do not simplify a
+multi-layer reference to a centered subject plus background and title. A secondary
+source figure without a target identity becomes a non-identity graphic layer, not an
+invented named character; explicit user count still wins. Do not invent release dates, prices, awards, sales, platform
 support or endorsements; remove source facts unless the user supplied them, while
 retaining typography hierarchy without blanking all text.
 Record a bounded export-failure category, whether a repair was attempted and why it

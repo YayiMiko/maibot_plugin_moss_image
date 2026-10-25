@@ -353,6 +353,8 @@ def test_draw_brief_prompt_is_discovery_first(
         assert "Do not invent release dates" in adaptation
         assert "do not blank all poster text" in adaptation
         assert "not a copy of the schema" in adaptation
+        assert "Preserve the blueprint's subject relationships" in adaptation
+        assert "do not simplify to a centered subject" in adaptation
         await plugin.on_unload()
 
     asyncio.run(run())
