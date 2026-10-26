@@ -190,19 +190,14 @@ def validate_export(
         raise ExportCheckError(
             "explicit_subject_count", "Single subject count mismatch"
         )
-    if len(exported.bindings) != len(identities):
-        raise ExportCheckError("identity_binding", "Missing identity bindings")
     used_keys, used_items = set(), set()
     for binding in exported.bindings:
         key = next(
             (key for key, names in identities.items() if binding.name in names),
             None,
         )
-        if key is None or key in used_keys:
-            raise ExportCheckError(
-                "identity_binding", "Unknown or duplicate identity binding"
-            )
-        used_keys.add(key)
+        if key is None:
+            raise ExportCheckError("identity_binding", "Unknown identity binding")
         if exported.mode == "layout":
             index = binding.item_index
             if (
@@ -214,18 +209,22 @@ def validate_export(
                 raise ExportCheckError(
                     "identity_binding", "Invalid character item binding"
                 )
+            used_keys.add(key)
             used_items.add(index)
             target = items[index]
         else:
-            if binding.item_index is not None:
+            if key in used_keys or binding.item_index is not None:
                 raise ExportCheckError(
-                    "identity_binding", "Caption binding has no item index"
+                    "identity_binding", "Caption requires one binding per identity"
                 )
+            used_keys.add(key)
             target = draft
         target["caption"] = (
             f"Same depicted subject, identity reference only, not lettering: {binding.name} = {key}. "
             + target["caption"]
         )
+    if used_keys != set(identities):
+        raise ExportCheckError("identity_binding", "Missing identity bindings")
     target = draft["summary"] if exported.mode == "layout" else draft
     if single:
         target["caption"] += (
@@ -773,9 +772,9 @@ class DrawPlanner:
                 "When the blueprint actually identifies typography occlusion, cuts, extreme scale contrast or a dense/open rhythm, preserve those relationships only if they serve this request; never add them as a default style. Re-coordinate palette and value structure around the target's hair and outfit so the reference's light/dark hierarchy still reads; preserve intentional cropping and occlusion. "
                 "Use official Layout for a poster or positioned text; otherwise official Caption is allowed. Canvas is frozen. "
                 "keep/replace/remove/recompose are optional diagnostic notes, not proof that a requirement or design relationship is implemented. "
-                "Provide exactly one binding per identity_groups key using one supplied source name; Layout bindings must point to distinct character item indices, Caption item_index=null. "
-                "Do not paste candidate canonical tags or infer additional people. User counts/outfits/actions beat default appearances. "
-                "If single_subject=true, depict exactly one person once and use exactly one Layout character item. "
+                "Provide at least one binding for every identity_groups key using one supplied source name. Layout: bind every occurrence of a supplied identity to its own distinct character item index; coherent multiple views of the same identity may repeat the same supplied name in separate bindings. Generic background or secondary figures that are not a supplied identity do not need a target binding and must not receive an invented one. Caption: item_index=null and exactly one binding per identity. "
+                "Do not paste candidate canonical tags. One identity is not a person count or an appearance count: when the user leaves the count open, preserve multi-figure design relationships with coherent views of the same target identity, each bound to that identity; never invent a different named character, a default duplicate or an unnamed humanoid echo. User counts/outfits/actions beat default appearances. "
+                "If single_subject=true, depict exactly one person once and use exactly one Layout character item; single_subject=false leaves the count open and does not require a duplicate. "
                 "All visible_texts must match the Layout text items in order; preserve fixed_texts verbatim exactly once. No Caption when rendering text. "
                 "When no_text=true, visible_texts and text items must be empty. Never inherit source lettering or person names by default. "
                 "Do not invent release dates, prices, awards, sales, platform support or official endorsements. Remove source promotional facts by default; use them only when the user explicitly provided them. "

@@ -361,6 +361,39 @@ def test_draw_brief_prompt_is_discovery_first(
     asyncio.run(run())
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("/moss 抽卡 卡缇希娅", False),
+        ("/moss 抽卡 卡缇希娅，单人", True),
+    ],
+)
+def test_draw_subject_count_comes_only_from_explicit_user_count(
+    plugin, command, draw_setup, comfy_transport, text, expected
+):
+    state, _, _ = draw_setup
+    command["text"] = text
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        adaptation = next(
+            messages
+            for messages in state["requests"]
+            if "DRAW ADAPTATION" in messages[0]["content"]
+        )
+        payload = json.loads(adaptation[1]["content"].split("\nRepair only")[0])
+        assert payload["single_subject"] is expected
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
 def patterned_png(seed: int = 0) -> bytes:
     output = io.BytesIO()
     image = Image.new("RGB", (768, 512), (50 + seed * 40, 80, 120))

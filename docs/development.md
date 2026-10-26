@@ -64,7 +64,13 @@ dark humanoid echoes, giant title occlusion, cuts or dense annotations as defaul
 If a secondary source figure has no target identity, consider its role and then keep
 the relationship, replace it with a suitable non-figure element, or recompose; never
 invent a named character and never retain an obvious extra humanoid as a "graphic
-layer" when the user requires one person or one appearance. Explicit user count wins. Do not invent release dates, prices, awards, sales, platform
+layer" when the user requires one person or one appearance. One identity is not a
+person or appearance count: when the count is unspecified, coherent multiple views
+of the same target identity may keep a present multi-figure relationship, and every
+depicted instance of that supplied identity must carry its binding. Generic
+background or secondary figures must not receive invented target tags. Explicit
+user count wins.
+Do not invent release dates, prices, awards, sales, platform
 support or endorsements; remove source facts unless the user supplied them, while
 retaining typography hierarchy without blanking all text.
 Record a bounded export-failure category, whether a repair was attempted and why it
