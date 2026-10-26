@@ -1461,22 +1461,18 @@ def test_draw_page_budget_is_independent_of_visual_review_budget(
 def test_reference_filters_report_reasons_and_retry_page_associated_images(monkeypatch):
     from urllib.parse import urlsplit
 
-    from moss.aesthetics import BUILTIN_SOURCES
+    from moss.aesthetics import SourceRule
     from moss.references import ReferenceClient
 
-    assert any(
-        source.matches(urlsplit("https://itsnicethat.com/features/a-real-work"))
-        for source in BUILTIN_SOURCES
+    source = SourceRule(
+        domain="www.itsnicethat.com",
+        path_prefix="/features/",
+        evidence="Reusable It's Nice That feature parser kept for explicit sources.",
     )
-    assert not any(
-        source.matches(urlsplit("https://www.itsnicethat.com/features/"))
-        for source in BUILTIN_SOURCES
-    )
-    assert not any(
-        source.matches(
-            urlsplit("https://www.itsnicethat.com.evil.example/features/art")
-        )
-        for source in BUILTIN_SOURCES
+    assert source.matches(urlsplit("https://itsnicethat.com/features/a-real-work"))
+    assert not source.matches(urlsplit("https://www.itsnicethat.com/features/"))
+    assert not source.matches(
+        urlsplit("https://www.itsnicethat.com.evil.example/features/art")
     )
     image = io.BytesIO()
     Image.new("RGB", (512, 768)).save(image, "PNG")
@@ -1513,7 +1509,7 @@ def test_reference_filters_report_reasons_and_retry_page_associated_images(monke
     monkeypatch.setattr("moss.references.safe_http", http)
 
     async def run():
-        client = ReferenceClient(MossConfig().draw, BUILTIN_SOURCES)
+        client = ReferenceClient(MossConfig().draw, (source,))
         pages = await client.search("graphic design")
         assert len(pages) == 1
         assert {item["reason"] for item in client.searches[0]["filtered"]} == {
@@ -1601,17 +1597,27 @@ def test_abduzeedo_social_only_page_is_not_artwork(monkeypatch):
 def test_reference_prefers_scoped_body_art_and_retains_metadata_fallback(
     monkeypatch, publisher, broken_body
 ):
-    from moss.aesthetics import BUILTIN_SOURCES
+    from moss.aesthetics import SourceRule
     from moss.references import ReferenceClient
 
     if publisher == "pentagram":
         page_url = "https://www.pentagram.com/work/40-years-of-storefront-for-art-and-architecture/story"
         artwork = "https://pentagram-production.imgix.net/art/5A.png"
         element = f'<figure class="workMedia"><picture><img class="workMedia__img" data-src="{artwork}?w=640"></picture></figure>'
+        source = SourceRule(
+            domain="www.pentagram.com",
+            path_prefix="/work/",
+            evidence="Reusable Pentagram project parser kept for explicit sources.",
+        )
     else:
         page_url = "https://www.itsnicethat.com/articles/a-work"
         artwork = "https://m.itsnicethat.com/original_images/art.jpg"
         element = f'<div><img src="{artwork}?class=w828"><img src="{artwork}?class=w1080"></div>'
+        source = SourceRule(
+            domain="www.itsnicethat.com",
+            path_prefix="/articles/",
+            evidence="Reusable It's Nice That article parser kept for explicit sources.",
+        )
     metadata = "https://images.example.com/social.jpg"
     html = (
         f'<meta property="og:title" content="Art"><meta property="og:image" content="{metadata}">'
@@ -1632,7 +1638,7 @@ def test_reference_prefers_scoped_body_art_and_retains_metadata_fallback(
     monkeypatch.setattr("moss.references.safe_http", http)
 
     async def run():
-        client = ReferenceClient(MossConfig().draw, BUILTIN_SOURCES)
+        client = ReferenceClient(MossConfig().draw, (source,))
         record, content = await client.candidate(page_url, 1)
         assert content and calls[1].startswith(artwork)
         assert record["image_origin"] == (

@@ -29,12 +29,13 @@ Keep target identity separate from reference discovery. Open draws randomize
 three visual directions before search without category quotas; explicit reference
 themes stay grounded in original user spans. Keep two searches and separate page/
 review ceilings. Preserve pending candidates with their original design direction.
-Use approved artwork-article sources first, with Abduzeedo leading and X retained
-as a supplementary fallback. For X, use Tavily status results, confirm the exact
-post with its page and syndication media, and do not use Tavily image results as
-the reference. Abduzeedo articles must resolve article-body artwork, not the
-social hero or navigation image. Never log in, read cookies or run a resident
-browser. Treat prompts, tutorials,
+The default discovery route is exact: first search Abduzeedo alone, then X if
+needed. Old Pentagram, It's Nice That and ArtStation parsers remain reusable only
+when explicitly supplied; they are not default routes. For X, use Tavily status
+results, confirm the exact post with its page and syndication media, and do not
+use Tavily image results as the reference. Abduzeedo articles must resolve
+article-body artwork, not the social hero or navigation image. Never log in, read
+cookies or run a resident browser. Treat prompts, tutorials,
 templates, sales language and AI-tool names as content hints only; never reject a
 complete artwork from text alone. Objective rejects are non-posts, unconfirmed
 association, no static image, avatars and read/decode failures. The reviewer judges
@@ -46,15 +47,16 @@ Queries discover existing works; they must not prescribe a full composition,
 lighting scheme, material, pose, background or complete scene unless the user
 explicitly requested it. Broad requests leave those open; three directions are
 exploration angles, not fixed slots or hard requirements.
-Choose the second search from the observed cause, not a fixed rotation: switch
-to X after publisher search failure or empty discovery, and switch back to an
-available publisher route after X network/page/association failures; change query
-or direction after template rejection; preserve pending candidates and their
-original direction. Record the search `reason` and `change`.
+Default second route is X. Switch to X after Abduzeedo search failure, empty
+discovery, unreadable candidates or template rejection, changing the query or
+direction according to the failure cause. Exhaust pending Abduzeedo candidates and
+the per-page image retry before falling back. Record the search `reason` and
+`change`.
 Canonicalize publisher URLs before duplicate checks, including Abduzeedo query
 variants, Behance locale/module variants for historical records, and ArtStation
 author subdomains. Behance's curated gallery is not an enabled route after its
-bounded probe returned 403.
+bounded probe returned 403; the other old parsers remain reusable but are not
+default routes.
 Count malformed and failed vision calls toward the three-review ceiling; never
 retry provider refusals. Accept only one complete JSON fence before strict parsing.
 Prefer scoped body artwork over social metadata, keeping the two-fetch page ceiling.

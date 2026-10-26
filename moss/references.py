@@ -455,6 +455,14 @@ class ReferenceClient:
         validate_search_query(query)
         self.calls += 1
         sources = self.sources if sources is None else sources
+        abduzeedo = [
+            source
+            for source in sources
+            if source.domain.removeprefix("www.") == "abduzeedo.com"
+        ]
+        if abduzeedo:
+            # The default artwork route is exact: never send a mixed publisher query.
+            sources = abduzeedo
         trace = {
             "query": query,
             "outcome": "failed",

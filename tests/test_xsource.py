@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 import pytest
 from PIL import Image
 
-from moss.aesthetics import BUILTIN_SOURCES
+from moss.aesthetics import BUILTIN_SOURCES, SourceRule
 from moss.config import MossConfig
 from moss.discovery import DiscoveryRouter
 from moss.references import (
@@ -281,27 +281,25 @@ def test_canonical_page_keys_collapse_locale_and_author_subdomains():
     )
 
 
-def test_abduzeedo_is_enabled_and_inaccessible_behance_is_not():
-    assert any(
-        source.domain == "www.abduzeedo.com" and source.path_prefix == "/"
-        for source in BUILTIN_SOURCES
-    )
+def test_default_sources_are_abduzeedo_only():
+    assert {source.domain for source in BUILTIN_SOURCES} == {"www.abduzeedo.com"}
+    assert [source.path_prefix for source in BUILTIN_SOURCES] == ["/"]
     assert not any(source.domain == "www.behance.net" for source in BUILTIN_SOURCES)
 
 
-def test_artstation_author_subdomain_is_an_allowed_source():
-    rule = next(
-        source for source in BUILTIN_SOURCES if source.domain == "artstation.com"
+def test_artstation_author_subdomain_parser_remains_reusable():
+    rule = SourceRule(
+        domain="artstation.com",
+        path_prefix="/projects/",
+        evidence="Reusable ArtStation project parser kept for explicit sources.",
+        allow_subdomains=True,
     )
     assert rule.matches(urlsplit("https://joelcodina.artstation.com/projects/bg3dxo"))
     assert not rule.matches(urlsplit("https://example.com/projects/bg3dxo"))
 
 
-def test_reference_client_collapses_canonical_duplicates_and_accepts_artstation_subdomains(
-    monkeypatch,
-):
+def test_reference_client_collapses_canonical_duplicates(monkeypatch):
     results = [
-        {"url": "https://joelcodina.artstation.com/projects/bg3dxo"},
         {"url": "https://abduzeedo.com/poster-a"},
         {"url": "https://www.abduzeedo.com/poster-a?utm_source=test"},
     ]
@@ -320,15 +318,97 @@ def test_reference_client_collapses_canonical_duplicates_and_accepts_artstation_
 
     async def run():
         pages = await client.search("graphic design")
-        assert pages == [
-            "https://abduzeedo.com/poster-a",
-            "https://joelcodina.artstation.com/projects/bg3dxo",
-        ]
+        assert pages == ["https://abduzeedo.com/poster-a"]
         assert {item["reason"] for item in client.searches[0]["filtered"]} == {
             "duplicate_result"
         }
 
     __import__("asyncio").run(run())
+
+
+def test_first_search_request_is_abduzeedo_only_even_with_mixed_sources(monkeypatch):
+    sources = (
+        SourceRule(
+            domain="www.abduzeedo.com",
+            path_prefix="/",
+            evidence="Default Abduzeedo article source.",
+        ),
+        SourceRule(
+            domain="www.artstation.com",
+            path_prefix="/artwork/",
+            evidence="Reusable but not default ArtStation source.",
+        ),
+    )
+    payloads = []
+
+    def http(url, **kwargs):
+        payloads.append(kwargs.get("payload"))
+        return url, "application/json", json.dumps({"results": []}).encode()
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+    client = ReferenceClient(MossConfig().draw, sources)
+
+    async def run():
+        assert await client.search("poster design") == []
+        assert payloads[0]["include_domains"] == ["www.abduzeedo.com"]
+        assert client.searches[0]["domains"] == ["www.abduzeedo.com"]
+
+    __import__("asyncio").run(run())
+
+
+def test_reference_client_accepts_artstation_with_explicit_source(monkeypatch):
+    sources = (
+        SourceRule(
+            domain="artstation.com",
+            path_prefix="/projects/",
+            evidence="Reusable ArtStation project parser kept for explicit sources.",
+            allow_subdomains=True,
+        ),
+    )
+
+    def http(url, **kwargs):
+        if kwargs.get("payload") is not None:
+            return (
+                url,
+                "application/json",
+                json.dumps(
+                    {
+                        "results": [
+                            {"url": "https://joelcodina.artstation.com/projects/bg3dxo"}
+                        ]
+                    }
+                ).encode(),
+            )
+        raise AssertionError(url)
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+    client = ReferenceClient(MossConfig().draw, sources)
+
+    async def run():
+        pages = await client.search("graphic design")
+        assert pages == ["https://joelcodina.artstation.com/projects/bg3dxo"]
+
+    __import__("asyncio").run(run())
+
+
+def test_obsolete_draw_routing_config_is_ignored_without_reset():
+    config = MossConfig.model_validate(
+        {
+            "draw": {
+                "enabled": True,
+                "tavily_api_key": "offline-test-key",
+                "profile": {"legacy": True},
+                "sources": ["https://www.artstation.com/artwork/"],
+                "publisher_sources": ["artstation"],
+                "limits": {"search_budget": 2, "prepare_timeout": 180},
+            }
+        }
+    )
+    assert config.draw.enabled is True
+    assert config.draw.tavily_api_key == "offline-test-key"
+    assert config.draw.limits.search_budget == 2
+    assert not hasattr(config.draw, "sources")
+    assert not hasattr(config.draw, "profile")
 
 
 def test_discovery_router_uses_publisher_then_x_with_shared_budget(monkeypatch):

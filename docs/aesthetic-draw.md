@@ -22,7 +22,7 @@ X 与现有来源共用同一个 Tavily 凭据，不需要 X API、登录浏览�
 
 ## 来源与候选
 
-优先使用可用的作品文章图源，Abduzeedo 第一，X 作为补充/回退。通常搜索一次，最多补查一次，共两次 Tavily 搜索；每个作品页最多两个关联图片地址。
+默认路由固定为：第一次仅搜索 Abduzeedo，第二次在需要时回退 X。通常搜索一次，最多补查一次，共两次 Tavily 搜索；每个作品页最多两个关联图片地址。
 
 X 路径：
 
@@ -34,19 +34,18 @@ X 路径：
 
 现有来源：
 
-- Abduzeedo 文章 `/`、Pentagram `/work/`、It's Nice That `/articles/` 与 `/features/`、ArtStation `/artwork/` 与作者子域 `/projects/`。
-- Abduzeedo 只取 `article-body` 内的作品图，不使用社交 hero、导航图或封面缩略图；正文图优先，分享元数据仅对既有来源作有限回退；记录 `image_origin`。
+- 默认只启用 Abduzeedo 文章 `/`；Pentagram `/work/`、It's Nice That `/articles/` 与 `/features/`、ArtStation `/artwork/` 与作者子域 `/projects/` 的解析器保留，但仅在显式提供时复用，不作为默认路由。
+- Abduzeedo 只取 `article-body` 内的作品图，不使用社交 hero、导航图或封面缩略图；正文图优先；记录 `image_origin`。
 - Behance curated Poster gallery 与项目页在有界探测中均返回 403，因此不从默认可用来源启用，也不使用登录、Cookie、代理或浏览器绕过；Behance 的 canonical 规则保留用于历史记录。
 - 搜索去重按 canonical key：去掉 query/fragment、Abduzeedo 查询变体、Behance locale 与 `/modules/`、ArtStation 用户子域、Pentagram `/story`；同一作品不再重复占名额。
 
 帖子文字只作为内容标记线索：`Prompt:`、workflow、template、AI 工具名、销售/产品词都不单独触发淘汰。硬拒绝只限客观问题：非帖子、关联不明、无静态图片、头像、读取或解码失败。图片是否为教程截图、占位模板、商品实拍，以及是否适合改编，由模板评审结合实际图片和本次要求判断；纯文字设计、产品题材、商业宣传不是全局禁用类别。帖子文字作为不可信资料随同一次评审传入，不新增模型调用。
 
-第二次搜索按失败原因选择，而不是固定顺序：
+默认第二次搜索只回退到 X，并按失败原因调整查询或方向：
 
-- publisher/Abduzeedo 搜索失败或没有有效入口：保留主题，切换 X；
-- X 搜索、页面或关联读取集中失败：保留主题，切回可用 publisher；
-- 图片可读但模板评审明确不适用：换探索方向或来源；
-- 查询没有得到有效帖子或作品入口：换查询，不机械重复原查询；
+- Abduzeedo 搜索失败、空结果、页面/图片不可读或模板评审不适用：保留主题，切换 X；
+- 查询没有得到有效作品入口：换查询，不机械重复原查询；
+- 先耗尽 Abduzeedo 待尝试候选和单页第二张图片重试，再回退；
 - 仍有未尝试候选：保留候选池，不因新搜索清空。
 
 搜索记录写入 `reason` 与 `change`，说明第二次搜索为何换查询或换来源；预算仍是上限，不要求搜满或审满。

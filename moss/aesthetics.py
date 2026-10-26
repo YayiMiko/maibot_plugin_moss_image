@@ -52,32 +52,6 @@ BUILTIN_SOURCES = tuple(
             "/",
             "Abduzeedo published design articles; article-body artwork association required.",
         ),
-        (
-            "www.pentagram.com",
-            "/work/",
-            "Pentagram published design projects; per-page artwork association required.",
-        ),
-        (
-            "www.itsnicethat.com",
-            "/articles/",
-            "It's Nice That creative reports; per-page artwork association required.",
-        ),
-        (
-            "www.itsnicethat.com",
-            "/features/",
-            "It's Nice That creative features; complete artwork must pass visual admission.",
-        ),
-        (
-            "www.artstation.com",
-            "/artwork/",
-            "ArtStation published artwork; authorship and awards are not independently verified.",
-        ),
-        (
-            "artstation.com",
-            "/projects/",
-            "ArtStation author subdomains use /projects/; association still needs the actual image.",
-            True,
-        ),
     ]
 )
 
