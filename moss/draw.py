@@ -74,19 +74,21 @@ def _second_search_plan(
     ):
         return "publisher", "source", "source_read_failure"
     if review_unusable:
+        if first_route == "x":
+            return "publisher", "source", "template_unusable_switch_source"
         return (
             "x" if x_available else "publisher",
             "query",
             "template_unusable_change_direction",
         )
     if last_empty:
-        if first_route == "publisher" and x_available:
+        if first_route == "x":
+            return "publisher", "source", "empty_results_switch_source"
+        if x_available:
             return "x", "source", "empty_results_switch_source"
-        return (
-            "x" if x_available else "publisher",
-            "query",
-            "empty_results_change_query",
-        )
+        return "publisher", "query", "empty_results_change_query"
+    if first_route == "x":
+        return "publisher", "source", "no_usable_candidate_switch_source"
     return (
         "x" if x_available else "publisher",
         "query",
@@ -488,71 +490,81 @@ class DrawPlanner:
             last_search_query = ""
             x_read_failures = 0
             review_unusable = 0
+            initial_route_unusable = 0
             search_attempts = 0
+            fallback_pending = False
+            preferred_route = ""
             while discovery.pages < 6 and review_calls < 3:
-                if not pool:
+                if not pool or fallback_pending:
                     if discovery.calls >= config.draw.limits.search_budget:
-                        break
-                    if search_attempts == 0:
-                        route_name = discovery.order[0]
-                        query = direction.query
-                        change = "initial"
-                        reason = "initial"
-                    else:
-                        route_name, change, reason = _second_search_plan(
-                            first_route,
-                            last_search_failed,
-                            last_search_empty,
-                            x_read_failures,
-                            review_unusable,
-                            discovery.x is not None,
-                        )
-                        if change == "query":
-                            if direction.query == last_search_query:
-                                direction = _next_direction(
-                                    directions, last_search_query
-                                )
-                            query = direction.query
-                        else:
-                            query = direction.query
-                    search_attempts += 1
-                    if search_attempts == 1:
-                        first_route = route_name
-                    record["status"] = "discovering"
-                    await self.store.save(record)
-                    sources = [
-                        source
-                        for source in policy.sources
-                        if source.domain.removeprefix("www.") not in failed_hosts
-                    ]
-                    try:
-                        pages = await discovery.search(
-                            query,
-                            route_name=route_name,
-                            sources=sources or policy.sources,
-                            reason=reason,
-                            change=change,
-                        )
-                    except DrawError:
-                        last_search_failed = True
-                        last_search_empty = False
-                        pages = []
-                    else:
-                        last_search_failed = False
-                        last_search_empty = not pages
-                    last_search_query = query
-                    rng.shuffle(pages)
-                    for page, page_route in pages:
-                        if page not in discovered:
-                            pool.append((page, direction, page_route))
-                            discovered.add(page)
-                    if not pool:
-                        if discovery.calls >= config.draw.limits.search_budget:
+                        fallback_pending = False
+                        if not pool:
                             break
-                        continue
+                    else:
+                        if search_attempts == 0:
+                            route_name = discovery.order[0]
+                            query = direction.query
+                            change = "initial"
+                            reason = "initial"
+                        else:
+                            route_name, change, reason = _second_search_plan(
+                                first_route,
+                                last_search_failed,
+                                last_search_empty,
+                                x_read_failures,
+                                review_unusable,
+                                discovery.x is not None,
+                            )
+                            if change == "query":
+                                if direction.query == last_search_query:
+                                    direction = _next_direction(
+                                        directions, last_search_query
+                                    )
+                                query = direction.query
+                            else:
+                                query = direction.query
+                        search_attempts += 1
+                        if search_attempts == 1:
+                            first_route = route_name
+                        record["status"] = "discovering"
+                        await self.store.save(record)
+                        sources = [
+                            source
+                            for source in policy.sources
+                            if source.domain.removeprefix("www.") not in failed_hosts
+                        ]
+                        try:
+                            pages = await discovery.search(
+                                query,
+                                route_name=route_name,
+                                sources=sources or policy.sources,
+                                reason=reason,
+                                change=change,
+                            )
+                        except DrawError:
+                            last_search_failed = True
+                            last_search_empty = False
+                            pages = []
+                        else:
+                            last_search_failed = False
+                            last_search_empty = not pages
+                        last_search_query = query
+                        rng.shuffle(pages)
+                        for page, page_route in pages:
+                            if page not in discovered:
+                                pool.append((page, direction, page_route))
+                                discovered.add(page)
+                        if search_attempts >= 2:
+                            preferred_route = route_name
+                        fallback_pending = False
+                        if not pool:
+                            if discovery.calls >= config.draw.limits.search_budget:
+                                break
+                            continue
                 pool.sort(
                     key=lambda item: (
                         urlsplit(item[0]).hostname.removeprefix("www.") in failed_hosts,
+                        item[2] != preferred_route,
                         item[1].query != direction.query,
                         discovery.page_priorities.get(item[0], 0),
                         urlsplit(item[0]).hostname.removeprefix("www.")
@@ -648,6 +660,16 @@ class DrawPlanner:
                 if not review.usable:
                     candidate["outcome"] = "unusable"
                     review_unusable += 1
+                    if route_name == first_route:
+                        initial_route_unusable += 1
+                    if (
+                        not fallback_pending
+                        and search_attempts == 1
+                        and initial_route_unusable >= 2
+                        and discovery.calls < config.draw.limits.search_budget
+                    ):
+                        # Keep pending pages, but give the second route a review slot.
+                        fallback_pending = True
                     direction = _next_direction(directions, candidate_direction.query)
                     continue
                 candidate["outcome"] = "selected"

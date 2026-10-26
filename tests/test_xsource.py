@@ -411,7 +411,7 @@ def test_obsolete_draw_routing_config_is_ignored_without_reset():
     assert not hasattr(config.draw, "profile")
 
 
-def test_discovery_router_uses_publisher_then_x_with_shared_budget(monkeypatch):
+def test_discovery_router_uses_x_then_publisher_with_shared_budget(monkeypatch):
     created = []
 
     class Stub:
@@ -447,13 +447,13 @@ def test_discovery_router_uses_publisher_then_x_with_shared_budget(monkeypatch):
         first = await router.search("first")
         second = await router.search("second")
         third = await router.search("third")
-        assert first == [("https://publisher.example/1", "publisher")]
-        assert second == [("https://x.example/1", "x")]
+        assert first == [("https://x.example/1", "x")]
+        assert second == [("https://publisher.example/1", "publisher")]
         assert third == []
         assert router.calls == 2
-        record, _ = await router.candidate(first[0][0], 1, "publisher")
-        assert record["page"] == "https://publisher.example/1"
+        record, _ = await router.candidate(first[0][0], 1, "x")
+        assert record["page"] == "https://x.example/1"
 
     __import__("asyncio").run(run())
-    assert router.order == ["publisher", "x"]
+    assert router.order == ["x", "publisher"]
     assert {item.name for item in created} == {"x", "publisher"}

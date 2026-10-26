@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Restrict the default artwork route to Abduzeedo first and X second. The first Tavily request targets Abduzeedo alone; X is used after failure, empty discovery, unreadable candidates or template rejection. Abduzeedo never falls back to its social hero/navigation image. Old publisher parsers remain reusable but are not default routes; the curated Behance Poster gallery remains disabled after 403 and is not replaced with unrestricted search.
+- Restore X first for default draw discovery, with Abduzeedo as the bounded publisher fallback. After at most two unsuitable reviews on the initial source, trigger the second search while preserving pending pages; keep the existing two searches, six pages, three reviews, eight model calls and 180-second preparation limits. Abduzeedo never falls back to its social hero/navigation image. Old publisher parsers remain reusable but are not default routes; the curated Behance Poster gallery remains disabled after 403 and is not replaced with unrestricted search.
 - Clarify that review blueprint prose fields are single strings, not arrays; `remove_source_content` joins multiple removals into one sentence.
 - Preserve only design relationships actually present in the current reference and compatible with the request; adapt subject/layer structure, typography occlusion, scale and density without adding double figures, echoes, giant titles, cuts or dense annotations as defaults. Secondary source subjects are interpreted by role and may be kept, replaced with suitable non-figure elements, or recomposed; never invent a named character or hide an obvious extra humanoid as a graphic layer when the user requires one person.
 

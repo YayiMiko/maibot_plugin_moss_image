@@ -316,14 +316,19 @@ def test_second_search_plan_uses_failure_cause():
         "source_read_failure",
     )
     assert _second_search_plan("x", False, False, 2, 1, True) == (
-        "x",
-        "query",
-        "template_unusable_change_direction",
+        "publisher",
+        "source",
+        "template_unusable_switch_source",
     )
     assert _second_search_plan("x", False, True, 0, 0, True) == (
-        "x",
-        "query",
-        "empty_results_change_query",
+        "publisher",
+        "source",
+        "empty_results_switch_source",
+    )
+    assert _second_search_plan("x", False, False, 0, 0, True) == (
+        "publisher",
+        "source",
+        "no_usable_candidate_switch_source",
     )
     assert _second_search_plan("publisher", True, False, 0, 0, True) == (
         "x",
@@ -443,37 +448,40 @@ def x_syndication(tweet_id: str, media_id: str) -> bytes:
     ).encode()
 
 
-def test_draw_second_search_switches_to_x_after_template_unusable(
+def test_draw_second_search_switches_to_publisher_after_template_unusable(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
     monkeypatch.setattr("moss.xsource.X_ENABLED", True)
     state["reject"] = 1
-    images = {"AAA": patterned_png(0), "BBB": patterned_png(1)}
+    x_art = patterned_png(0)
     publisher_art = patterned_png(2)
-    search_calls = {"x": 0}
 
     def http(url, **kwargs):
         if "payload" in kwargs:
             domains = kwargs["payload"]["include_domains"]
-            if "art.example.com" in domains:
+            if domains == ["x.com"]:
                 return (
                     url,
                     "application/json",
                     json.dumps(
-                        {"results": [{"url": "https://art.example.com/works/0"}]}
+                        {"results": [{"url": "https://x.com/artist/status/123"}]}
                     ).encode(),
                 )
-            assert domains == ["x.com"]
-            search_calls["x"] += 1
-            tweet_id = "123" if search_calls["x"] == 1 else "456"
+            assert "art.example.com" in domains
             return (
                 url,
                 "application/json",
                 json.dumps(
-                    {"results": [{"url": f"https://x.com/artist/status/{tweet_id}"}]}
+                    {"results": [{"url": "https://art.example.com/works/0"}]}
                 ).encode(),
             )
+        if url == "https://x.com/i/status/123":
+            return url, "text/html", x_page_html("AAA")
+        if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
+            return url, "application/json", x_syndication("123", "AAA")
+        if "pbs.twimg.com/media/AAA" in url:
+            return url, "image/png", x_art
         if url == "https://art.example.com/works/0":
             return (
                 url,
@@ -483,22 +491,6 @@ def test_draw_second_search_switches_to_x_after_template_unusable(
             )
         if url == "https://art.example.com/image0.png":
             return url, "image/png", publisher_art
-        if url == "https://x.com/i/status/123":
-            return url, "text/html", x_page_html("AAA")
-        if url == "https://x.com/i/status/456":
-            return url, "text/html", x_page_html("BBB")
-        if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
-            return (
-                url,
-                "application/json",
-                x_syndication("123", "AAA")
-                if "id=123" in url
-                else x_syndication("456", "BBB"),
-            )
-        if "pbs.twimg.com/media/AAA" in url:
-            return url, "image/png", images["AAA"]
-        if "pbs.twimg.com/media/BBB" in url:
-            return url, "image/png", images["BBB"]
         raise AssertionError(url)
 
     monkeypatch.setattr("moss.references.safe_http", http)
@@ -517,10 +509,9 @@ def test_draw_second_search_switches_to_x_after_template_unusable(
             ).read_text(encoding="utf-8")
         )
         searches = discovery["searches"]
-        assert [item["route"] for item in searches] == ["publisher", "x"]
-        assert searches[0]["query"] != searches[1]["query"]
-        assert searches[1]["change"] == "query"
-        assert searches[1]["reason"] == "template_unusable_change_direction"
+        assert [item["route"] for item in searches] == ["x", "publisher"]
+        assert searches[1]["change"] == "source"
+        assert searches[1]["reason"] == "template_unusable_switch_source"
         reviews = json.loads(
             (plugin.store.runtime / record["task_id"] / "draw/reviews.json").read_text(
                 encoding="utf-8"
@@ -533,7 +524,104 @@ def test_draw_second_search_switches_to_x_after_template_unusable(
     asyncio.run(run())
 
 
-def test_draw_second_search_switches_to_x_after_publisher_search_failure(
+def test_draw_reserves_third_review_for_publisher_after_two_x_rejections(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.xsource.X_ENABLED", True)
+    state["reject"] = 2
+    images = {
+        "AAA": patterned_png(0),
+        "BBB": patterned_png(1),
+        "CCC": patterned_png(2),
+    }
+    publisher_art = patterned_png(3)
+
+    def http(url, **kwargs):
+        if "payload" in kwargs:
+            domains = kwargs["payload"]["include_domains"]
+            if domains == ["x.com"]:
+                return (
+                    url,
+                    "application/json",
+                    json.dumps(
+                        {
+                            "results": [
+                                {"url": f"https://x.com/artist/status/{tid}"}
+                                for tid in ("101", "102", "103")
+                            ]
+                        }
+                    ).encode(),
+                )
+            assert "art.example.com" in domains
+            return (
+                url,
+                "application/json",
+                json.dumps(
+                    {"results": [{"url": "https://art.example.com/works/0"}]}
+                ).encode(),
+            )
+        for tweet_id, media_id in (("101", "AAA"), ("102", "BBB"), ("103", "CCC")):
+            if url == f"https://x.com/i/status/{tweet_id}":
+                return url, "text/html", x_page_html(media_id)
+            if (
+                url.startswith("https://cdn.syndication.twimg.com/tweet-result")
+                and f"id={tweet_id}" in url
+            ):
+                return url, "application/json", x_syndication(tweet_id, media_id)
+            if f"pbs.twimg.com/media/{media_id}" in url:
+                return url, "image/png", images[media_id]
+        if url == "https://art.example.com/works/0":
+            return (
+                url,
+                "text/html",
+                b'<meta property="og:title" content="Art">'
+                b'<meta property="og:image" content="https://art.example.com/image0.png">',
+            )
+        if url == "https://art.example.com/image0.png":
+            return url, "image/png", publisher_art
+        raise AssertionError(url)
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        directory = plugin.store.runtime / record["task_id"] / "draw"
+        discovery = json.loads(
+            (directory / "discovery.json").read_text(encoding="utf-8")
+        )
+        searches = discovery["searches"]
+        assert [item["route"] for item in searches] == ["x", "publisher"]
+        assert searches[1]["reason"] == "template_unusable_switch_source"
+        assert searches[1]["change"] == "source"
+        reviews = json.loads((directory / "reviews.json").read_text(encoding="utf-8"))
+        assert [item["outcome"] for item in reviews] == [
+            "unusable",
+            "unusable",
+            "usable",
+        ]
+        references = json.loads(
+            (directory / "references.json").read_text(encoding="utf-8")
+        )
+        assert [item.get("source_route") for item in references[:3]] == [
+            "x",
+            "x",
+            "publisher",
+        ]
+        assert any(item.get("route") == "x" for item in discovery["pending"])
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_second_search_switches_to_publisher_after_x_search_failure(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
@@ -547,21 +635,24 @@ def test_draw_second_search_switches_to_x_after_publisher_search_failure(
         if "payload" in kwargs:
             payload = kwargs["payload"]
             queries.append(payload)
-            if "art.example.com" in payload["include_domains"]:
+            if payload["include_domains"] == ["x.com"]:
                 raise ReferenceError("timeout", stage="search", url=url)
-            assert payload["include_domains"] == ["x.com"]
+            assert "art.example.com" in payload["include_domains"]
             return (
                 url,
                 "application/json",
                 json.dumps(
-                    {"results": [{"url": "https://x.com/artist/status/123"}]}
+                    {"results": [{"url": "https://art.example.com/works/0"}]}
                 ).encode(),
             )
-        if url == "https://x.com/i/status/123":
-            return url, "text/html", x_page_html("AAA")
-        if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
-            return url, "application/json", x_syndication("123", "AAA")
-        if "pbs.twimg.com/media/AAA" in url:
+        if url == "https://art.example.com/works/0":
+            return (
+                url,
+                "text/html",
+                b'<meta property="og:title" content="Art">'
+                b'<meta property="og:image" content="https://art.example.com/image0.png">',
+            )
+        if url == "https://art.example.com/image0.png":
             return url, "image/png", image
         raise AssertionError(url)
 
@@ -581,18 +672,18 @@ def test_draw_second_search_switches_to_x_after_publisher_search_failure(
             ).read_text(encoding="utf-8")
         )
         searches = discovery["searches"]
-        assert [item["route"] for item in searches] == ["publisher", "x"]
+        assert [item["route"] for item in searches] == ["x", "publisher"]
         assert searches[0]["query"] == searches[1]["query"]
         assert searches[1]["change"] == "source"
-        assert searches[1]["reason"] == "publisher_search_failure_switch_source"
+        assert searches[1]["reason"] == "source_read_failure"
         assert queries[0]["query"] == queries[1]["query"]
-        assert queries[1]["include_domains"] == ["x.com"]
+        assert "art.example.com" in queries[1]["include_domains"]
         await plugin.on_unload()
 
     asyncio.run(run())
 
 
-def test_draw_second_search_switches_to_x_after_empty_publisher_search(
+def test_draw_second_search_switches_to_publisher_after_empty_x_search(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
@@ -604,21 +695,24 @@ def test_draw_second_search_switches_to_x_after_empty_publisher_search(
     def http(url, **kwargs):
         if "payload" in kwargs:
             domains = kwargs["payload"]["include_domains"]
-            if "art.example.com" in domains:
+            if domains == ["x.com"]:
                 return url, "application/json", json.dumps({"results": []}).encode()
-            assert domains == ["x.com"]
+            assert "art.example.com" in domains
             return (
                 url,
                 "application/json",
                 json.dumps(
-                    {"results": [{"url": "https://x.com/artist/status/456"}]}
+                    {"results": [{"url": "https://art.example.com/works/0"}]}
                 ).encode(),
             )
-        if url == "https://x.com/i/status/456":
-            return url, "text/html", x_page_html("BBB")
-        if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
-            return url, "application/json", x_syndication("456", "BBB")
-        if "pbs.twimg.com/media/" in url:
+        if url == "https://art.example.com/works/0":
+            return (
+                url,
+                "text/html",
+                b'<meta property="og:title" content="Art">'
+                b'<meta property="og:image" content="https://art.example.com/image0.png">',
+            )
+        if url == "https://art.example.com/image0.png":
             return url, "image/png", image
         raise AssertionError(url)
 
@@ -638,7 +732,7 @@ def test_draw_second_search_switches_to_x_after_empty_publisher_search(
             ).read_text(encoding="utf-8")
         )
         searches = discovery["searches"]
-        assert [item["route"] for item in searches] == ["publisher", "x"]
+        assert [item["route"] for item in searches] == ["x", "publisher"]
         assert searches[0]["query"] == searches[1]["query"]
         assert searches[1]["change"] == "source"
         assert searches[1]["reason"] == "empty_results_switch_source"
@@ -693,7 +787,7 @@ def test_draw_first_eligible_submits_exactly_once_and_redacts_config(
     asyncio.run(run())
 
 
-def test_draw_falls_back_to_x_and_submits_one_association(
+def test_draw_uses_x_first_and_submits_one_association(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
@@ -757,10 +851,7 @@ def test_draw_falls_back_to_x_and_submits_one_association(
         discovery = json.loads(
             (directory / "discovery.json").read_text(encoding="utf-8")
         )
-        assert [item["route"] for item in discovery["searches"]] == [
-            "publisher",
-            "x",
-        ]
+        assert [item["route"] for item in discovery["searches"]] == ["x"]
         references = json.loads(
             (directory / "references.json").read_text(encoding="utf-8")
         )
