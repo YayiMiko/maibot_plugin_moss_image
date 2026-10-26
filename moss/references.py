@@ -270,16 +270,23 @@ class WorkPage(HTMLParser):
         """
         super().__init__(convert_charrefs=True)
         self.url, self.title, self.author = url, "", ""
+        self.host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
+        self.og_type = ""
         self.body_images, self.social_images, self.image_origins = [], [], {}
         self.stack = []
         self.feed(text)
-        # Keep one body artwork and one metadata fallback within the two-fetch ceiling.
-        ordered = (
-            self.body_images[:1]
-            + self.social_images[:1]
-            + self.body_images[1:]
-            + self.social_images[1:]
-        )
+        if self.host == "abduzeedo.com":
+            # Abduzeedo article bodies contain the actual artwork; its social image
+            # is a cropped hero and must not be treated as the reference.
+            ordered = self.body_images[:2]
+        else:
+            # Keep one body artwork and one metadata fallback within the two-fetch ceiling.
+            ordered = (
+                self.body_images[:1]
+                + self.social_images[:1]
+                + self.body_images[1:]
+                + self.social_images[1:]
+            )
         self.images = list(dict.fromkeys(ordered))[:2]
 
     def handle_starttag(self, tag, attrs):
@@ -300,40 +307,71 @@ class WorkPage(HTMLParser):
                 self.image_origins.setdefault(content, "social_metadata")
         if tag == "meta" and name == "og:title":
             self.title = content[:300]
+        if tag == "meta" and name == "og:type":
+            self.og_type = content[:50].lower()
         if tag == "meta" and name in {"author", "article:author"}:
             self.author = content[:200]
         if tag == "img" and len(self.body_images) < 8:
-            source = fields.get("data-src") or fields.get("src") or ""
+            source = (
+                fields.get("data-src")
+                or fields.get("data-original")
+                or fields.get("src")
+                or ""
+            )
+            if not source:
+                srcset = fields.get("srcset") or fields.get("data-srcset") or ""
+                if srcset:
+                    source = srcset.split(",")[0].strip().split(" ")[0]
             try:
                 host = urlsplit(self.url).hostname
                 image = urlsplit(urljoin(self.url, source))
             except ValueError:
-                source, host = "", None
+                source, host, image = "", None, None
             in_article = any(element == "article" for element, _ in self.stack)
+            in_article_body = any(
+                "article-body" in classes for _, classes in self.stack
+            )
             outside_navigation = not any(
                 element in {"nav", "aside", "header", "footer"}
                 for element, _ in self.stack
             )
             associated = (
                 source
-                and in_article
                 and outside_navigation
                 and (
-                    host in {"pentagram.com", "www.pentagram.com"}
-                    and "workMedia__img" in fields.get("class", "").split()
-                    and any(
-                        element == "figure" and "workMedia" in classes
-                        for element, classes in self.stack
+                    in_article
+                    and (
+                        host in {"pentagram.com", "www.pentagram.com"}
+                        and "workMedia__img" in fields.get("class", "").split()
+                        and any(
+                            element == "figure" and "workMedia" in classes
+                            for element, classes in self.stack
+                        )
+                        and image.hostname == "pentagram-production.imgix.net"
+                        or host in {"itsnicethat.com", "www.itsnicethat.com"}
+                        and image.hostname == "m.itsnicethat.com"
+                        and image.path.startswith("/original_images/")
                     )
-                    and image.hostname == "pentagram-production.imgix.net"
-                    or host in {"itsnicethat.com", "www.itsnicethat.com"}
-                    and image.hostname == "m.itsnicethat.com"
-                    and image.path.startswith("/original_images/")
+                    or self.host == "abduzeedo.com"
+                    and self.og_type in {"", "article"}
+                    and in_article_body
                 )
             )
-            if associated and not any(
-                urlsplit(urljoin(self.url, old)).path == image.path
-                for old in self.body_images
+            key = ""
+            if image is not None:
+                key = image.geturl() if self.host == "abduzeedo.com" else image.path
+            if (
+                associated
+                and key
+                and not any(
+                    (
+                        urlsplit(urljoin(self.url, old)).geturl()
+                        if self.host == "abduzeedo.com"
+                        else urlsplit(urljoin(self.url, old)).path
+                    )
+                    == key
+                    for old in self.body_images
+                )
             ):
                 self.body_images.append(source)
                 self.image_origins[source] = "article_artwork"
@@ -493,6 +531,17 @@ class ReferenceClient:
                     trace["filtered"].append(
                         {"url": display_url(url), "reason": reason}
                     )
+            # Prefer earlier approved sources (Abduzeedo first) without narrowing domains.
+            source_rank = {
+                source.domain.removeprefix("www."): index
+                for index, source in enumerate(sources)
+            }
+            pages.sort(
+                key=lambda page: source_rank.get(
+                    (urlsplit(page).hostname or "").lower().removeprefix("www."),
+                    len(source_rank),
+                )
+            )
             self.seen_keys.update(accepted_keys)
             trace.update(
                 outcome="ok",
@@ -530,6 +579,12 @@ class ReferenceClient:
                 "unexpected_page_type", stage="page", url=page_url, status=200
             )
         page = WorkPage(body.decode("utf-8", errors="replace"), page_url)
+        if source.domain.removeprefix(
+            "www."
+        ) == "abduzeedo.com" and page.og_type not in {"", "article"}:
+            raise ReferenceError(
+                "not_an_article", stage="page", url=page_url, status=200
+            )
         if not page.images or not page.title:
             raise ReferenceError(
                 "missing_artwork_metadata", stage="page", url=page_url, status=200

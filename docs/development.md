@@ -29,10 +29,12 @@ Keep target identity separate from reference discovery. Open draws randomize
 three visual directions before search without category quotas; explicit reference
 themes stay grounded in original user spans. Keep two searches and separate page/
 review ceilings. Preserve pending candidates with their original design direction.
-X is the priority discovery route, not the only route: use Tavily status results,
-confirm the exact post with its page and syndication media, and fall back to the
-approved publisher sources. Never use Tavily image results as the reference and
-never log in, read cookies or run a resident browser. Treat prompts, tutorials,
+Use approved artwork-article sources first, with Abduzeedo leading and X retained
+as a supplementary fallback. For X, use Tavily status results, confirm the exact
+post with its page and syndication media, and do not use Tavily image results as
+the reference. Abduzeedo articles must resolve article-body artwork, not the
+social hero or navigation image. Never log in, read cookies or run a resident
+browser. Treat prompts, tutorials,
 templates, sales language and AI-tool names as content hints only; never reject a
 complete artwork from text alone. Objective rejects are non-posts, unconfirmed
 association, no static image, avatars and read/decode failures. The reviewer judges
@@ -45,11 +47,14 @@ lighting scheme, material, pose, background or complete scene unless the user
 explicitly requested it. Broad requests leave those open; three directions are
 exploration angles, not fixed slots or hard requirements.
 Choose the second search from the observed cause, not a fixed rotation: switch
-source after X network/page/association failures; change query or direction after
-empty discovery or template rejection; preserve pending candidates and their
+to X after publisher search failure or empty discovery, and switch back to an
+available publisher route after X network/page/association failures; change query
+or direction after template rejection; preserve pending candidates and their
 original direction. Record the search `reason` and `change`.
-Canonicalize publisher URLs before duplicate checks, including Behance locale and
-module variants and ArtStation author subdomains.
+Canonicalize publisher URLs before duplicate checks, including Abduzeedo query
+variants, Behance locale/module variants for historical records, and ArtStation
+author subdomains. Behance's curated gallery is not an enabled route after its
+bounded probe returned 403.
 Count malformed and failed vision calls toward the three-review ceiling; never
 retry provider refusals. Accept only one complete JSON fence before strict parsing.
 Prefer scoped body artwork over social metadata, keeping the two-fetch page ceiling.

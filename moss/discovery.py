@@ -15,7 +15,8 @@ class DiscoveryRouter:
         self.routes = {"publisher": self.publishers}
         if self.x is not None:
             self.routes["x"] = self.x
-            self.order = ["x", "publisher"]
+            # Approved artwork-article sources lead; X remains a fallback.
+            self.order = ["publisher", "x"]
         else:
             self.order = ["publisher"]
         self.cursor = 0

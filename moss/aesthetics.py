@@ -48,6 +48,11 @@ BUILTIN_SOURCES = tuple(
     )
     for item in [
         (
+            "www.abduzeedo.com",
+            "/",
+            "Abduzeedo published design articles; article-body artwork association required.",
+        ),
+        (
             "www.pentagram.com",
             "/work/",
             "Pentagram published design projects; per-page artwork association required.",
@@ -72,11 +77,6 @@ BUILTIN_SOURCES = tuple(
             "/projects/",
             "ArtStation author subdomains use /projects/; association still needs the actual image.",
             True,
-        ),
-        (
-            "www.behance.net",
-            "/gallery/",
-            "Behance published projects; authorship and awards are not independently verified.",
         ),
     ]
 )

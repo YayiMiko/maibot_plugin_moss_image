@@ -59,7 +59,13 @@ def _second_search_plan(
     if last_failed:
         if first_route == "x":
             return "publisher", "source", "source_read_failure"
-        return "publisher", "query", "publisher_search_failure_change_query"
+        return (
+            "x" if x_available else "publisher",
+            "source" if x_available else "query",
+            "publisher_search_failure_switch_source"
+            if x_available
+            else "publisher_search_failure_change_query",
+        )
     if (
         first_route == "x"
         and x_read_failures
@@ -74,6 +80,8 @@ def _second_search_plan(
             "template_unusable_change_direction",
         )
     if last_empty:
+        if first_route == "publisher" and x_available:
+            return "x", "source", "empty_results_switch_source"
         return (
             "x" if x_available else "publisher",
             "query",
@@ -486,7 +494,7 @@ class DrawPlanner:
                     if discovery.calls >= config.draw.limits.search_budget:
                         break
                     if search_attempts == 0:
-                        route_name = "x" if discovery.x else "publisher"
+                        route_name = discovery.order[0]
                         query = direction.query
                         change = "initial"
                         reason = "initial"

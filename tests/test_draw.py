@@ -4,6 +4,7 @@ import asyncio
 import io
 import json
 import socket
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -324,6 +325,16 @@ def test_second_search_plan_uses_failure_cause():
         "query",
         "empty_results_change_query",
     )
+    assert _second_search_plan("publisher", True, False, 0, 0, True) == (
+        "x",
+        "source",
+        "publisher_search_failure_switch_source",
+    )
+    assert _second_search_plan("publisher", False, True, 0, 0, True) == (
+        "x",
+        "source",
+        "empty_results_switch_source",
+    )
     assert _second_search_plan("publisher", True, False, 0, 0, False) == (
         "publisher",
         "query",
@@ -432,20 +443,30 @@ def x_syndication(tweet_id: str, media_id: str) -> bytes:
     ).encode()
 
 
-def test_draw_second_search_changes_query_after_template_unusable(
+def test_draw_second_search_switches_to_x_after_template_unusable(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
     monkeypatch.setattr("moss.xsource.X_ENABLED", True)
     state["reject"] = 1
     images = {"AAA": patterned_png(0), "BBB": patterned_png(1)}
-    search_calls = {"count": 0}
+    publisher_art = patterned_png(2)
+    search_calls = {"x": 0}
 
     def http(url, **kwargs):
         if "payload" in kwargs:
-            assert kwargs["payload"]["include_domains"] == ["x.com"]
-            search_calls["count"] += 1
-            tweet_id = "123" if search_calls["count"] == 1 else "456"
+            domains = kwargs["payload"]["include_domains"]
+            if "art.example.com" in domains:
+                return (
+                    url,
+                    "application/json",
+                    json.dumps(
+                        {"results": [{"url": "https://art.example.com/works/0"}]}
+                    ).encode(),
+                )
+            assert domains == ["x.com"]
+            search_calls["x"] += 1
+            tweet_id = "123" if search_calls["x"] == 1 else "456"
             return (
                 url,
                 "application/json",
@@ -453,6 +474,15 @@ def test_draw_second_search_changes_query_after_template_unusable(
                     {"results": [{"url": f"https://x.com/artist/status/{tweet_id}"}]}
                 ).encode(),
             )
+        if url == "https://art.example.com/works/0":
+            return (
+                url,
+                "text/html",
+                b'<meta property="og:title" content="Art">'
+                b'<meta property="og:image" content="https://art.example.com/image0.png">',
+            )
+        if url == "https://art.example.com/image0.png":
+            return url, "image/png", publisher_art
         if url == "https://x.com/i/status/123":
             return url, "text/html", x_page_html("AAA")
         if url == "https://x.com/i/status/456":
@@ -487,7 +517,7 @@ def test_draw_second_search_changes_query_after_template_unusable(
             ).read_text(encoding="utf-8")
         )
         searches = discovery["searches"]
-        assert [item["route"] for item in searches] == ["x", "x"]
+        assert [item["route"] for item in searches] == ["publisher", "x"]
         assert searches[0]["query"] != searches[1]["query"]
         assert searches[1]["change"] == "query"
         assert searches[1]["reason"] == "template_unusable_change_direction"
@@ -503,7 +533,7 @@ def test_draw_second_search_changes_query_after_template_unusable(
     asyncio.run(run())
 
 
-def test_draw_second_search_switches_source_after_x_read_failure(
+def test_draw_second_search_switches_to_x_after_publisher_search_failure(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
@@ -517,31 +547,21 @@ def test_draw_second_search_switches_source_after_x_read_failure(
         if "payload" in kwargs:
             payload = kwargs["payload"]
             queries.append(payload)
-            if payload["include_domains"] == ["x.com"]:
-                return (
-                    url,
-                    "application/json",
-                    json.dumps(
-                        {"results": [{"url": "https://x.com/artist/status/123"}]}
-                    ).encode(),
-                )
+            if "art.example.com" in payload["include_domains"]:
+                raise ReferenceError("timeout", stage="search", url=url)
+            assert payload["include_domains"] == ["x.com"]
             return (
                 url,
                 "application/json",
                 json.dumps(
-                    {"results": [{"url": "https://art.example.com/works/0"}]}
+                    {"results": [{"url": "https://x.com/artist/status/123"}]}
                 ).encode(),
             )
         if url == "https://x.com/i/status/123":
-            raise ReferenceError("http_status", stage="page", url=url, status=404)
-        if url == "https://art.example.com/works/0":
-            return (
-                url,
-                "text/html",
-                b'<meta property="og:title" content="Art">'
-                b'<meta property="og:image" content="https://art.example.com/image0.png">',
-            )
-        if url == "https://art.example.com/image0.png":
+            return url, "text/html", x_page_html("AAA")
+        if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
+            return url, "application/json", x_syndication("123", "AAA")
+        if "pbs.twimg.com/media/AAA" in url:
             return url, "image/png", image
         raise AssertionError(url)
 
@@ -561,18 +581,18 @@ def test_draw_second_search_switches_source_after_x_read_failure(
             ).read_text(encoding="utf-8")
         )
         searches = discovery["searches"]
-        assert [item["route"] for item in searches] == ["x", "publisher"]
+        assert [item["route"] for item in searches] == ["publisher", "x"]
         assert searches[0]["query"] == searches[1]["query"]
         assert searches[1]["change"] == "source"
-        assert searches[1]["reason"] == "source_read_failure"
+        assert searches[1]["reason"] == "publisher_search_failure_switch_source"
         assert queries[0]["query"] == queries[1]["query"]
-        assert "art.example.com" in queries[1]["include_domains"]
+        assert queries[1]["include_domains"] == ["x.com"]
         await plugin.on_unload()
 
     asyncio.run(run())
 
 
-def test_draw_second_search_changes_query_after_empty_x_search(
+def test_draw_second_search_switches_to_x_after_empty_publisher_search(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
@@ -580,18 +600,20 @@ def test_draw_second_search_changes_query_after_empty_x_search(
     output = io.BytesIO()
     Image.new("RGB", (768, 512), "white").save(output, "PNG")
     image = output.getvalue()
-    search_calls = {"count": 0}
 
     def http(url, **kwargs):
         if "payload" in kwargs:
-            assert kwargs["payload"]["include_domains"] == ["x.com"]
-            search_calls["count"] += 1
-            results = (
-                []
-                if search_calls["count"] == 1
-                else [{"url": "https://x.com/artist/status/456"}]
+            domains = kwargs["payload"]["include_domains"]
+            if "art.example.com" in domains:
+                return url, "application/json", json.dumps({"results": []}).encode()
+            assert domains == ["x.com"]
+            return (
+                url,
+                "application/json",
+                json.dumps(
+                    {"results": [{"url": "https://x.com/artist/status/456"}]}
+                ).encode(),
             )
-            return url, "application/json", json.dumps({"results": results}).encode()
         if url == "https://x.com/i/status/456":
             return url, "text/html", x_page_html("BBB")
         if url.startswith("https://cdn.syndication.twimg.com/tweet-result"):
@@ -616,10 +638,10 @@ def test_draw_second_search_changes_query_after_empty_x_search(
             ).read_text(encoding="utf-8")
         )
         searches = discovery["searches"]
-        assert [item["route"] for item in searches] == ["x", "x"]
-        assert searches[0]["query"] != searches[1]["query"]
-        assert searches[1]["change"] == "query"
-        assert searches[1]["reason"] == "empty_results_change_query"
+        assert [item["route"] for item in searches] == ["publisher", "x"]
+        assert searches[0]["query"] == searches[1]["query"]
+        assert searches[1]["change"] == "source"
+        assert searches[1]["reason"] == "empty_results_switch_source"
         assert searches[0]["accepted"] == 0
         await plugin.on_unload()
 
@@ -671,7 +693,7 @@ def test_draw_first_eligible_submits_exactly_once_and_redacts_config(
     asyncio.run(run())
 
 
-def test_draw_uses_x_first_and_submits_one_association(
+def test_draw_falls_back_to_x_and_submits_one_association(
     plugin, command, draw_setup, comfy_transport, monkeypatch
 ):
     state, _, _ = draw_setup
@@ -682,6 +704,8 @@ def test_draw_uses_x_first_and_submits_one_association(
 
     def http(url, **kwargs):
         if "payload" in kwargs:
+            if "art.example.com" in kwargs["payload"]["include_domains"]:
+                return url, "application/json", json.dumps({"results": []}).encode()
             assert kwargs["payload"]["include_domains"] == ["x.com"]
             return (
                 url,
@@ -733,7 +757,10 @@ def test_draw_uses_x_first_and_submits_one_association(
         discovery = json.loads(
             (directory / "discovery.json").read_text(encoding="utf-8")
         )
-        assert discovery["searches"][0]["route"] == "x"
+        assert [item["route"] for item in discovery["searches"]] == [
+            "publisher",
+            "x",
+        ]
         references = json.loads(
             (directory / "references.json").read_text(encoding="utf-8")
         )
@@ -1497,6 +1524,74 @@ def test_reference_filters_report_reasons_and_retry_page_associated_images(monke
         assert record["width"] == 512 and content
         assert len(record["image_failures"]) == 1 and "secret" not in json.dumps(record)
         assert len(calls) == 4
+
+    asyncio.run(run())
+
+
+def test_abduzeedo_uses_article_body_artwork_not_hero_or_navigation(monkeypatch):
+    from moss.aesthetics import BUILTIN_SOURCES
+    from moss.references import ReferenceClient
+
+    page_url = "https://abduzeedo.com/poster-series"
+    artwork = "https://lh7-us.googleusercontent.com/article-art"
+    broken = "https://abduzeedo.com/api/img?url=broken-art"
+    hero = "https://cms.abduzeedo.com/hero.jpg"
+    html = (Path(__file__).parent / "fixtures" / "abduzeedo_article.html").read_text(
+        encoding="utf-8"
+    )
+    image = io.BytesIO()
+    Image.new("RGB", (512, 768)).save(image, "PNG")
+    calls = []
+
+    def http(url, **kwargs):
+        calls.append(url)
+        if url == page_url:
+            return url, "text/html", html.encode()
+        if url == broken:
+            raise ReferenceError("http_status", stage="image", url=url, status=404)
+        if url == artwork:
+            return url, "image/png", image.getvalue()
+        raise AssertionError(url)
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        client = ReferenceClient(MossConfig().draw, BUILTIN_SOURCES)
+        record, content = await client.candidate(page_url, 1)
+        assert content
+        assert record["image_origin"] == "article_artwork"
+        assert record["image"] == artwork
+        assert hero not in calls
+        assert "unrelated.example" not in calls
+        assert len(record["image_failures"]) == 1
+
+    asyncio.run(run())
+
+
+def test_abduzeedo_social_only_page_is_not_artwork(monkeypatch):
+    from moss.aesthetics import BUILTIN_SOURCES
+    from moss.references import ReferenceClient
+
+    page_url = "https://abduzeedo.com/tool-review"
+    html = (
+        '<meta property="og:title" content="Tool review">'
+        '<meta property="og:type" content="article">'
+        '<meta property="og:image" content="https://cms.abduzeedo.com/hero.jpg">'
+        '<main class="post-page"><div class="article-body"></div></main>'
+    )
+
+    def http(url, **kwargs):
+        if url == page_url:
+            return url, "text/html", html.encode()
+        raise AssertionError(url)
+
+    monkeypatch.setattr("moss.references.safe_http", http)
+
+    async def run():
+        client = ReferenceClient(MossConfig().draw, BUILTIN_SOURCES)
+        with pytest.raises(ReferenceError) as failure:
+            await client.candidate(page_url, 1)
+        assert failure.value.details["code"] == "missing_artwork_metadata"
 
     asyncio.run(run())
 

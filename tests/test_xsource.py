@@ -275,6 +275,18 @@ def test_canonical_page_keys_collapse_locale_and_author_subdomains():
         canonical_page_key("https://www.pentagram.com/work/poster-house/story")
         == "pentagram.com/work/poster-house"
     )
+    assert (
+        canonical_page_key("https://www.abduzeedo.com/poster-a?utm_source=test")
+        == "abduzeedo.com/poster-a"
+    )
+
+
+def test_abduzeedo_is_enabled_and_inaccessible_behance_is_not():
+    assert any(
+        source.domain == "www.abduzeedo.com" and source.path_prefix == "/"
+        for source in BUILTIN_SOURCES
+    )
+    assert not any(source.domain == "www.behance.net" for source in BUILTIN_SOURCES)
 
 
 def test_artstation_author_subdomain_is_an_allowed_source():
@@ -285,13 +297,13 @@ def test_artstation_author_subdomain_is_an_allowed_source():
     assert not rule.matches(urlsplit("https://example.com/projects/bg3dxo"))
 
 
-def test_reference_client_collapses_locale_duplicates_and_accepts_artstation_subdomains(
+def test_reference_client_collapses_canonical_duplicates_and_accepts_artstation_subdomains(
     monkeypatch,
 ):
     results = [
-        {"url": "https://www.behance.net/gallery/204988273/Grid-poster?locale=ru_RU"},
-        {"url": "https://www.behance.net/gallery/204988273/Grid-poster?locale=ko_KR"},
         {"url": "https://joelcodina.artstation.com/projects/bg3dxo"},
+        {"url": "https://abduzeedo.com/poster-a"},
+        {"url": "https://www.abduzeedo.com/poster-a?utm_source=test"},
     ]
 
     def http(url, **kwargs):
@@ -309,7 +321,7 @@ def test_reference_client_collapses_locale_duplicates_and_accepts_artstation_sub
     async def run():
         pages = await client.search("graphic design")
         assert pages == [
-            "https://www.behance.net/gallery/204988273/Grid-poster?locale=ru_RU",
+            "https://abduzeedo.com/poster-a",
             "https://joelcodina.artstation.com/projects/bg3dxo",
         ]
         assert {item["reason"] for item in client.searches[0]["filtered"]} == {
@@ -319,7 +331,7 @@ def test_reference_client_collapses_locale_duplicates_and_accepts_artstation_sub
     __import__("asyncio").run(run())
 
 
-def test_discovery_router_uses_x_then_publisher_with_shared_budget(monkeypatch):
+def test_discovery_router_uses_publisher_then_x_with_shared_budget(monkeypatch):
     created = []
 
     class Stub:
@@ -355,13 +367,13 @@ def test_discovery_router_uses_x_then_publisher_with_shared_budget(monkeypatch):
         first = await router.search("first")
         second = await router.search("second")
         third = await router.search("third")
-        assert first == [("https://x.example/1", "x")]
-        assert second == [("https://publisher.example/1", "publisher")]
+        assert first == [("https://publisher.example/1", "publisher")]
+        assert second == [("https://x.example/1", "x")]
         assert third == []
         assert router.calls == 2
-        record, _ = await router.candidate(first[0][0], 1, "x")
-        assert record["page"] == "https://x.example/1"
+        record, _ = await router.candidate(first[0][0], 1, "publisher")
+        assert record["page"] == "https://publisher.example/1"
 
     __import__("asyncio").run(run())
-    assert router.order == ["x", "publisher"]
+    assert router.order == ["publisher", "x"]
     assert {item.name for item in created} == {"x", "publisher"}
