@@ -291,6 +291,7 @@ class WorkPage(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         fields = dict(attrs)
+        classes = (fields.get("class") or "").split()
         name = fields.get("property") or fields.get("name")
         content = fields.get("content") or ""
         if tag == "meta" and name in {
@@ -342,7 +343,7 @@ class WorkPage(HTMLParser):
                     in_article
                     and (
                         host in {"pentagram.com", "www.pentagram.com"}
-                        and "workMedia__img" in fields.get("class", "").split()
+                        and "workMedia__img" in classes
                         and any(
                             element == "figure" and "workMedia" in classes
                             for element, classes in self.stack
@@ -391,7 +392,7 @@ class WorkPage(HTMLParser):
             "track",
             "wbr",
         }:
-            self.stack.append((tag, fields.get("class", "").split()))
+            self.stack.append((tag, classes))
 
     def handle_endtag(self, tag):
         """Close the matching scope even when publisher markup omits inner closes."""
