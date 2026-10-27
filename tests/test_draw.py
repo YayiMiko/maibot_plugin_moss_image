@@ -16,6 +16,7 @@ from moss.commands import parse_command
 from moss.config import MossConfig
 from moss.draw import _second_search_plan, reference_failure_reason
 from moss.draw_models import DrawError
+from moss.oc import parse_role
 from moss.references import ReferenceError, cache_reference, normalize_image, safe_http
 
 
@@ -236,6 +237,10 @@ def draw_setup(plugin, command, monkeypatch):
             }
             if "水彩画" in payload["request"]:
                 response["draft"]["caption"] += " Watercolor illustration."
+            if payload.get("oc_context"):
+                response["draft"]["caption"] += " " + " ".join(
+                    item["description"] for item in payload["oc_context"]["characters"]
+                )
             if state.get("poster") or "海报" in payload["request"]:
                 summary = response["draft"]["caption"]
                 response.update(mode="layout", visible_texts=payload["fixed_texts"])
@@ -405,6 +410,101 @@ def test_draw_subject_count_comes_only_from_explicit_user_count(
             next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
         )
         assert record["status"] == "sent", record
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("oc_name", ["狐莉", "卡缇希娅"])
+def test_draw_explicit_oc_reaches_prompt_without_canonical_lookup(
+    plugin, command, draw_setup, comfy_transport, oc_name
+):
+    state, _, _ = draw_setup
+    marker = "OCMARK silver fox ears, emerald scarf"
+    command["text"] = f"/moss 抽卡 {oc_name}穿雨衣 --角色 小狐"
+
+    async def run():
+        await plugin.on_load()
+        plugin.config.planning.danbooru_enabled = True
+        resolver = AsyncMock()
+        plugin.runner.planner.resolver.resolve = resolver
+        await plugin.characters.handle(
+            parse_role(f"新建 {oc_name}={marker}"), "user", [], "a" * 24
+        )
+        await plugin.characters.handle(
+            parse_role(f"别名 {oc_name}=小狐"), "user", [], "b" * 24
+        )
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        directory = plugin.store.runtime / record["task_id"]
+        final_prompt = (directory / "prompt.txt").read_text(encoding="utf-8")
+        assert marker in final_prompt
+        assert f"{oc_name} = {oc_name}" in final_prompt
+        assert "cartethyia_(wuthering_waves)" not in final_prompt
+        resolver.assert_not_awaited()
+        adaptation = next(
+            messages
+            for messages in state["requests"]
+            if "DRAW ADAPTATION" in messages[0]["content"]
+        )
+        payload = json.loads(adaptation[1]["content"].split("\nRepair only")[0])
+        assert payload["oc_context"]["characters"][0]["name"] == oc_name
+        assert payload["identity_groups"][oc_name] == [oc_name, "小狐"]
+        brief = next(
+            messages
+            for messages in state["requests"]
+            if messages[0]["content"].startswith("Prepare a discovery")
+        )
+        assert marker not in brief[1]["content"]
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_mixed_canon_and_oc_keeps_canon_verification(
+    plugin, command, draw_setup, comfy_transport
+):
+    state, _, _ = draw_setup
+    marker = "OCMARK moon-pale hair, violet coat"
+    command["text"] = "/moss 抽卡 卡缇希娅和狐莉 --角色 狐莉"
+
+    async def run():
+        await plugin.on_load()
+        plugin.config.planning.danbooru_enabled = True
+        resolver = AsyncMock(
+            return_value=[
+                {
+                    "source_name": "卡缇希娅",
+                    "copyright": "鸣潮",
+                    "canonical_tag": "cartethyia_(wuthering_waves)",
+                    "status": "verified",
+                    "candidates": [],
+                }
+            ]
+        )
+        plugin.runner.planner.resolver.resolve = resolver
+        await plugin.characters.handle(
+            parse_role(f"新建 狐莉={marker}"), "user", [], "c" * 24
+        )
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["status"] == "sent", record
+        final_prompt = (
+            plugin.store.runtime / record["task_id"] / "prompt.txt"
+        ).read_text(encoding="utf-8")
+        assert marker in final_prompt
+        assert "cartethyia_(wuthering_waves)" in final_prompt
+        resolver.assert_awaited_once()
+        assert "狐莉" not in json.dumps(resolver.await_args.args[0], ensure_ascii=False)
+        assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
         await plugin.on_unload()
 
     asyncio.run(run())

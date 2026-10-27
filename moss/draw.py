@@ -745,7 +745,10 @@ class DrawPlanner:
                     )
                     identities.setdefault(key or name, []).append(name)
             for item in (request.oc_context or {}).get("characters", []):
-                identities[item["name"]] = [item["name"]]
+                identities[item["name"]] = [
+                    item["name"],
+                    *(item.get("aliases") or []),
+                ]
             fixed_texts = [
                 next(value for value in match.groups() if value is not None)
                 for match in re.finditer(
@@ -800,6 +803,7 @@ class DrawPlanner:
                 "Apply the blueprint's valuable design relationships directly in the draft captions and items; replace subjects with the requested characters, remove unrelated names, brands, signatures and source narratives. "
                 "Preserve the blueprint's strongest subject relationships, visual hierarchy, scale, density, color/value structure and occlusion only when they are actually present in this reference and compatible with the request. Adapt or replace them for the target; do not add double figures, echoes, giant title occlusion, horizontal cuts or dense annotations that the reference does not contain. "
                 "If a source subject has no target identity, understand whether it provides contrast, narrative, balance or framing, then decide whether to preserve that relationship, replace it with a suitable non-figure element, or recompose. Do not invent a named character and do not default to a dark humanoid echo. If the user requires one person or one appearance, do not retain an obvious additional humanoid figure merely by calling it a graphic layer. "
+                "oc_context lists explicitly selected original characters. Treat each description as that target identity's stable appearance, use its supplied names or aliases for identity bindings, and let user-requested clothing, actions and counts override preset defaults. Do not require or invent canonical tags, and never use these private preset details as reference-search terms. "
                 "When the blueprint actually identifies typography occlusion, cuts, extreme scale contrast or a dense/open rhythm, preserve those relationships only if they serve this request; never add them as a default style. Re-coordinate palette and value structure around the target's hair and outfit so the reference's light/dark hierarchy still reads; preserve intentional cropping and occlusion. "
                 "Use official Layout for a poster or positioned text; otherwise official Caption is allowed. Canvas is frozen. "
                 "keep/replace/remove/recompose are optional diagnostic notes, not proof that a requirement or design relationship is implemented. "

@@ -211,6 +211,22 @@ def test_missing_oc_does_not_submit_any_generation(plugin, command, comfy_transp
     asyncio.run(run())
 
 
+def test_missing_oc_blocks_draw_before_discovery(plugin, command, comfy_transport):
+    command["text"] = "/moss 抽卡 狐莉 --角色 不存在"
+
+    async def run():
+        await plugin.on_load()
+        plugin.config.draw.enabled = True
+        plugin.config.draw.tavily_api_key = "offline-test-key"
+        await plugin.handle_moss(**command)
+        assert not plugin.jobs and not comfy_transport
+        plugin.ctx.llm.generate.assert_not_awaited()
+        assert "没有找到角色" in plugin.ctx.send.text.call_args.args[0]
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize(
     "body,count",
     [
