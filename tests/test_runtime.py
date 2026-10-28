@@ -238,6 +238,51 @@ def test_metadata_follows_sampler_links_and_keeps_layout_text():
     assert "16x24" in parts[0]
 
 
+def test_metadata_command_skips_malformed_graph_nodes(plugin, command):
+    output = io.BytesIO()
+    info = PngInfo()
+    info.add_text(
+        "prompt",
+        json.dumps(
+            {
+                "sample": {
+                    "class_type": "KSampler",
+                    "inputs": {"positive": ["bad", 0], "negative": ["good", 0]},
+                },
+                "bad": "invalid node",
+                "good": {
+                    "class_type": "CLIPTextEncode",
+                    "inputs": {"text": "negative"},
+                },
+            }
+        ),
+    )
+    Image.new("RGB", (16, 24)).save(output, format="PNG", pnginfo=info)
+    command["text"] = "/moss 解析法术"
+    plugin.ctx.api.call.return_value = {
+        "group_id": "group",
+        "message": [
+            {
+                "type": "image",
+                "data": {
+                    "url": "base64://" + base64.b64encode(output.getvalue()).decode()
+                },
+            }
+        ],
+    }
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        result = plugin.ctx.send.text.call_args.args[0]
+        assert "negative" in result and "不会自动反推" in result
+        plugin.ctx.llm.generate.assert_not_awaited()
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("cross_group", [True, False])
 def test_cross_conversation_quotes_are_rejected(plugin, png_bytes, cross_group):
     current = {

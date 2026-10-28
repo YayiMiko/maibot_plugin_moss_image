@@ -235,16 +235,23 @@ def extract_metadata(content: bytes) -> list[str]:
         )
         if not sampler:
             continue
+        sampler_inputs = sampler.get("inputs")
+        if not isinstance(sampler_inputs, dict):
+            continue
         values = []
         for branch in ("positive", "negative"):
-            pending, seen, texts = [sampler.get("inputs", {}).get(branch)], set(), []
+            pending, seen, texts = [sampler_inputs.get(branch)], set(), []
             while pending:
                 link = pending.pop()
                 if not isinstance(link, list) or len(link) != 2 or str(link[0]) in seen:
                     continue
                 seen.add(str(link[0]))
                 node = graph.get(str(link[0]), {})
+                if not isinstance(node, dict):
+                    continue
                 inputs = node.get("inputs", {})
+                if not isinstance(inputs, dict):
+                    continue
                 if "TextEncode" in str(node.get("class_type", "")) and isinstance(
                     inputs.get("text"), str
                 ):
