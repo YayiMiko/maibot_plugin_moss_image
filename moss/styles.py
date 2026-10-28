@@ -38,7 +38,7 @@ def parse_style_definition(text: str) -> tuple[str, str]:
 
 
 class StyleStore:
-    """Persist a shared style library and independently scoped selections."""
+    """Persist a shared style library and request-local snapshots."""
 
     def __init__(self, data: Path):
         self.path = Path(data) / "styles.json"
@@ -120,7 +120,7 @@ class StyleStore:
                     )
             return ", ".join(names), "\n".join(library[name] for name in names)
 
-    async def handle(self, request, scope: str, task_id: str, config) -> list[str]:
+    async def handle(self, request, task_id: str, config) -> list[str]:
         """Read or atomically edit the shared style library."""
         async with self.lock:
             library = dict(parse_style_definition(item) for item in config.presets)

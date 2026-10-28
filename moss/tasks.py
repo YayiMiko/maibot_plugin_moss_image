@@ -59,7 +59,7 @@ class TaskRunner:
                     record["status"] = "editing_style"
                     await self.store.save(record)
                     parts = await self.styles.handle(
-                        request, context["scope"], record["task_id"], config.styles
+                        request, record["task_id"], config.styles
                     )
                 else:
                     record["status"] = "reading_image"

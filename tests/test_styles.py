@@ -62,13 +62,9 @@ def test_style_store_preserves_library_and_freezes_snapshots(tmp_path):
         store = StyleStore(tmp_path)
         await store.initialize()
         config = Styles()
-        await store.handle(
-            StyleRequest("create", "测试", "ink"), "a" * 64, "a" * 24, config
-        )
+        await store.handle(StyleRequest("create", "测试", "ink"), "a" * 24, config)
         frozen = await store.snapshot(("测试",), config)
-        await store.handle(
-            StyleRequest("edit", "测试", "new"), "a" * 64, "b" * 24, config
-        )
+        await store.handle(StyleRequest("edit", "测试", "new"), "b" * 24, config)
         assert frozen == ("测试", "ink")
         assert await store.snapshot(("测试",), config) == ("测试", "new")
         assert await store.snapshot((), config) == ("", "")
@@ -158,9 +154,7 @@ def test_cancelled_style_write_finishes_before_releasing_the_lock(
         store = StyleStore(tmp_path)
         await store.initialize()
         operation = asyncio.create_task(
-            store.handle(
-                StyleRequest("create", "测试", "ink"), "a" * 64, "a" * 24, Styles()
-            )
+            store.handle(StyleRequest("create", "测试", "ink"), "a" * 24, Styles())
         )
         try:
             assert await asyncio.to_thread(entered.wait, 5)
