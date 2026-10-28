@@ -315,8 +315,8 @@ class CharacterResolver:
                             break
                     if best or time.monotonic() >= deadline:
                         break
-                # Original-name autocomplete can resolve multilingual aliases; scoped
-                # stem searches must still agree on the work, never on popularity.
+                # Autocomplete can return prefixes, aliases or spelling corrections;
+                # only independent source evidence or an exact name can establish identity.
                 queries = [(name, None) for name in names]
                 queries.extend(
                     (candidate.split("_(", 1)[0], candidate)
@@ -372,6 +372,11 @@ class CharacterResolver:
                             ):
                                 reason = "work_mismatch"
                                 continue
+                        if not trusted and identity_name(
+                            normalized.split("_(", 1)[0]
+                        ) != identity_name(source_name):
+                            reason = "identity_unconfirmed"
+                            continue
                         matches[normalized] = record
                     if len(matches) == 1:
                         best = next(iter(matches.values()))

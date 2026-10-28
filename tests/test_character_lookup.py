@@ -238,9 +238,7 @@ def test_local_alias_is_never_treated_as_online_evidence(monkeypatch, failure):
 
 
 @pytest.mark.parametrize("hints", [[], ["wrong_romanization"], ["wrong_name_(game)"]])
-def test_original_name_autocomplete_can_recover_missing_or_incorrect_hints(
-    monkeypatch, hints
-):
+def test_autocomplete_alone_cannot_verify_unrelated_identity(monkeypatch, hints):
     resolver = CharacterResolver(logging.getLogger("original"))
 
     def get(url, **kwargs):
@@ -258,11 +256,69 @@ def test_original_name_autocomplete_can_recover_missing_or_incorrect_hints(
         resolver.module, "_fetch_stable_identity_tags", lambda *a, **kw: ()
     )
     result = resolver._lookup([{"source_name": "角色原名", "candidates": hints}])[0]
-    assert (
-        result["status"] == "verified"
-        and result["canonical_tag"] == "correct_name_(game)"
-    )
+    assert result["status"] == "unresolved" and "canonical_tag" not in result
+    assert result["lookup_reason"] == "identity_unconfirmed"
     assert any(item["query"] == "角色原名" for item in result["lookup_trace"])
+
+
+def test_autocomplete_accepts_exact_source_name_with_character_category(monkeypatch):
+    resolver = CharacterResolver(logging.getLogger("exact-name"))
+
+    def get(url, **kwargs):
+        if url.endswith("autocomplete.json"):
+            return response(
+                [{"value": "alice_(game)", "category": 4, "post_count": 100}]
+            )
+        return response()
+
+    monkeypatch.setattr(resolver.module.requests, "get", get)
+    monkeypatch.setattr(
+        resolver.module, "_fetch_stable_identity_tags", lambda *a, **kw: ()
+    )
+    result = resolver._lookup([{"source_name": "Alice", "candidates": []}])[0]
+    assert result["status"] == "verified"
+    assert result["canonical_tag"] == "alice_(game)"
+
+
+def test_direct_generation_does_not_inject_autocomplete_guess(
+    plugin, command, comfy_transport, monkeypatch
+):
+    plugin.config.planning.danbooru_enabled = True
+    command["text"] = "/moss 生成 角色原名在雨中"
+    plugin.ctx.llm.generate.return_value = {
+        "success": True,
+        "response": json.dumps(
+            {
+                "characters": [
+                    {"source_name": "角色原名", "candidates": [], "depicted": True}
+                ]
+            }
+        ),
+    }
+
+    def get(url, **kwargs):
+        if url.endswith("autocomplete.json"):
+            return response(
+                [{"value": "unrelated_(game)", "category": 4, "post_count": 100}]
+            )
+        return response()
+
+    async def run():
+        await plugin.on_load()
+        monkeypatch.setattr(plugin.runner.planner.resolver.module.requests, "get", get)
+        try:
+            await plugin.handle_moss(**command)
+            await asyncio.gather(*list(plugin.jobs.values()))
+            submission = next(
+                call for call in comfy_transport if call.url.path == "/prompt"
+            )
+            prompt = json.loads(submission.content)["prompt"]["4"]["inputs"]["text"]
+            assert prompt.endswith("角色原名在雨中")
+            assert "unrelated_(game)" not in prompt
+        finally:
+            await plugin.on_unload()
+
+    asyncio.run(run())
 
 
 @pytest.mark.parametrize("kind", ["ambiguous", "wrong_work"])
@@ -294,7 +350,7 @@ def test_autocomplete_never_chooses_popular_namesake(monkeypatch, kind):
     )[0]
     assert result["status"] == "unresolved" and "canonical_tag" not in result
     assert result["lookup_reason"] == (
-        "ambiguous_identity" if kind == "ambiguous" else "work_mismatch"
+        "identity_unconfirmed" if kind == "ambiguous" else "work_mismatch"
     )
 
 
