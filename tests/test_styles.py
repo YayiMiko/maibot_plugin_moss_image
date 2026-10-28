@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from moss.commands import HELP, StyleRequest, parse_command
 from moss.config import MossConfig, Styles
-from moss.styles import StyleStore, parse_style_definition
+from moss.styles import BUILTIN_STYLES, StyleStore, parse_style_definition
 
 
 def test_style_help_is_only_in_the_submenu():
@@ -55,6 +55,27 @@ def test_configuration_has_no_artist_library_or_age_or_count_defaults():
     assert config.styles.presets == []
     with pytest.raises(ValidationError):
         Styles(presets=["A=flat", "A=other"])
+
+
+def test_builtin_style_is_available_and_overridable(tmp_path):
+    async def run():
+        store = StyleStore(tmp_path)
+        await store.initialize()
+        config = Styles()
+        assert store.effective_names(config) == ["立绘"]
+        assert await store.snapshot(("立绘",), config) == (
+            "立绘",
+            BUILTIN_STYLES["立绘"],
+        )
+        await store.handle(
+            StyleRequest("edit", "立绘", "custom splash art"), "c" * 24, config
+        )
+        assert await store.snapshot(("立绘",), config) == (
+            "立绘",
+            "custom splash art",
+        )
+
+    asyncio.run(run())
 
 
 def test_style_store_preserves_library_and_freezes_snapshots(tmp_path):

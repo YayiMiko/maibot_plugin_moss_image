@@ -8,6 +8,13 @@ from pathlib import Path
 
 from .storage import atomic_write
 
+BUILTIN_STYLES = {
+    "立绘": (
+        "character splash art, costume, soft fabric vs rigid metal contrast, "
+        "glowing red/blue accents, dynamic flowing lines, white background,"
+    )
+}
+
 
 def parse_style_definition(text: str) -> tuple[str, str]:
     """Validate a named preset without rewriting its artist notation or prose.
@@ -117,7 +124,8 @@ class StyleStore:
         Returns:
             Style names mapped to their complete visual text.
         """
-        library = dict(parse_style_definition(item) for item in config.presets)
+        library = dict(BUILTIN_STYLES)
+        library.update(parse_style_definition(item) for item in config.presets)
         library.update(self.state["library"])
         return library
 

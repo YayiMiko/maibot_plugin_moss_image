@@ -111,8 +111,8 @@ def test_runtime_status_is_live_and_read_only(tmp_path):
     assert "plugin" not in schema["sections"]
     section = schema["sections"]["runtime_status"]
     assert section["order"] == 90
-    assert section["fields"]["style_library"]["default"] == "千代风格\n测试"
-    assert section["fields"]["style_library"]["label"] == "当前风格库（2）"
+    assert section["fields"]["style_library"]["default"] == "千代风格\n测试\n立绘"
+    assert section["fields"]["style_library"]["label"] == "当前风格库（3）"
     assert section["fields"]["character_library"]["default"] == "狐莉"
     assert section["fields"]["active_tasks"]["default"] == 1
     assert section["fields"]["config_version"]["default"] == "0.2.0"
@@ -132,10 +132,11 @@ def test_runtime_status_is_safe_before_plugin_load():
     assert section["fields"]["active_tasks"]["default"] == 0
 
 
-def test_empty_runtime_libraries_are_clear(tmp_path):
+def test_empty_runtime_libraries_include_builtin_style(tmp_path):
     plugin = _loaded_plugin(tmp_path)
     section = plugin.get_webui_config_schema()["sections"]["runtime_status"]
-    assert section["fields"]["style_library"]["default"] == EMPTY_LIBRARY
+    assert section["fields"]["style_library"]["default"] == "立绘"
+    assert section["fields"]["style_library"]["label"] == "当前风格库（1）"
     assert section["fields"]["character_library"]["default"] == EMPTY_LIBRARY
 
 
