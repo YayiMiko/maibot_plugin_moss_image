@@ -6,7 +6,7 @@ MaiBot 的 MOSS 生图插件：原文直出、官方 Caption／Layout 规划、�
 [![CI](https://github.com/YayiMiko/maibot_plugin_moss_image/actions/workflows/checks.yml/badge.svg)](https://github.com/YayiMiko/maibot_plugin_moss_image/actions/workflows/checks.yml)
 [![License](https://img.shields.io/github/license/YayiMiko/maibot_plugin_moss_image)](LICENSE)
 
-最新 Release：[v0.2.7](https://github.com/YayiMiko/maibot_plugin_moss_image/releases/tag/v0.2.7)。`main` 还可能包含未发布改动；离线测试通过不代表服务器加载、真实 QQ 收图或画面效果已验收。
+最新 Release：[v0.3.0](https://github.com/YayiMiko/maibot_plugin_moss_image/releases/tag/v0.3.0)。`main` 还可能包含未发布改动；离线测试通过不代表服务器加载、真实 QQ 收图或画面效果已验收。
 
 [使用说明](docs/usage.md) · [抽卡说明](docs/aesthetic-draw.md) · [配置示例](docs/config.example.toml) · [更新记录](docs/CHANGELOG.md) · [开发说明](docs/development.md)
 

@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 — 2026-10-29
 
 - Add a built-in `立绘` style available through `@立绘` on new and empty libraries; a chat-edited same-name style overrides it without being written into `config.toml`.
 - Reorganize the GitHub repository page around a concise Chinese About section and a task-oriented README, moving detailed command workflows to `docs/usage.md` and implementation details to `docs/development.md`.
 - Rebuild the WebUI configuration around Chinese labels, descriptions, examples and ordered sections. Keep common connection, draw, model and delivery fields visible while hiding rare model-file, budget and maintenance fields.
 - Add a read-only runtime status section generated on every config-page load, showing current style names, OC names, running jobs and config version without writing runtime data into `config.toml`.
-- Hide legacy `styles.presets`, import existing values into `styles.json` idempotently at startup, and stop adding a built-in style to new installations. Rename the character section to “OC 权限” because it only stores administrator IDs.
+- Hide legacy `styles.presets`, import existing values into `styles.json` idempotently at startup, and remove the default config preset in favor of the code-provided `立绘` style. Rename the character section to “OC 权限” because it only stores administrator IDs.
+- Move the ComfyUI API graph to `assets/comfyui/` and document the repository layout.
 - Clarify that a visual reference can transfer its composition and other relationships even when its subject, format or typography differs from the requested image. Keep provider refusals terminal and preserve explicit user constraints.
 - Report mixed reference-read and suitability failures, including a failed fallback search, without presenting the entire attempt as a template rejection.
 
