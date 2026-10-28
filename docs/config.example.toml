@@ -1,6 +1,6 @@
 # Copy to the plugin root as config.toml when configuring an installation.
 [plugin]
-config_version = "0.1.0"
+config_version = "0.2.0"
 
 [connection]
 enabled = true
@@ -27,7 +27,8 @@ timeout = 180
 
 [styles]
 positive_prefix = "best quality, highres,"
-presets = ["千代风格=@yuasa akira, @tomose shunsaku, @kithera, @enuzoushigaya, 简洁干净的二次元平涂画风，"]
+# Legacy compatibility only: imported into styles.json at startup.
+presets = []
 
 [draw]
 enabled = false

@@ -12,6 +12,7 @@ if __package__:
     from .moss.characters import CharacterResolver
     from .moss.commands import COMMAND_PATTERN, HELP, parse_command
     from .moss.config import MossConfig
+    from .moss.config_ui import add_host_field_hints, build_runtime_status_section
     from .moss.oc import OCStore
     from .moss.planner import Planner
     from .moss.references import cache_reference
@@ -23,6 +24,7 @@ else:
     from moss.characters import CharacterResolver
     from moss.commands import COMMAND_PATTERN, HELP, parse_command
     from moss.config import MossConfig
+    from moss.config_ui import add_host_field_hints, build_runtime_status_section
     from moss.oc import OCStore
     from moss.planner import Planner
     from moss.references import cache_reference
@@ -37,6 +39,45 @@ class MossPlugin(MaiBotPlugin):
 
     config_model = MossConfig
 
+    def get_webui_config_schema(
+        self,
+        *,
+        plugin_id: str = "",
+        plugin_name: str = "",
+        plugin_version: str = "",
+        plugin_description: str = "",
+        plugin_author: str = "",
+    ) -> dict:
+        """Add a read-only snapshot of live styles, OCs and running jobs.
+
+        The host calls this hook on every config-page inspection, so a page
+        refresh picks up styles or OCs created through chat commands.
+        """
+        schema = super().get_webui_config_schema(
+            plugin_id=plugin_id,
+            plugin_name=plugin_name,
+            plugin_version=plugin_version,
+            plugin_description=plugin_description,
+            plugin_author=plugin_author,
+        )
+        styles = getattr(self, "styles", None)
+        characters = getattr(self, "characters", None)
+        loaded = styles is not None and characters is not None
+        try:
+            config = self.config
+        except RuntimeError:
+            config = MossConfig()
+        sections = schema.setdefault("sections", {})
+        sections.pop("plugin", None)
+        sections["runtime_status"] = build_runtime_status_section(
+            style_names=styles.effective_names(config.styles) if loaded else [],
+            character_names=sorted(characters.state["library"]) if loaded else [],
+            active_tasks=len(getattr(self, "jobs", {})),
+            config_version=config.plugin.config_version,
+            loaded=loaded,
+        )
+        return add_host_field_hints(schema)
+
     async def on_load(self):
         """Validate bundled resources and restore state without external requests."""
         self.jobs = {}
@@ -48,6 +89,15 @@ class MossPlugin(MaiBotPlugin):
         await self.store.initialize()
         self.styles = StyleStore(self.store.data)
         await self.styles.initialize()
+        try:
+            imported = await self.styles.import_legacy(self.config.styles)
+        except Exception as exc:
+            self.ctx.logger.warning(
+                "MOSS legacy style import skipped: %s", type(exc).__name__
+            )
+        else:
+            if imported:
+                self.ctx.logger.info("MOSS imported %d legacy styles", imported)
         self.characters = OCStore(self.store.data)
         await self.characters.initialize()
         resolver = CharacterResolver(self.ctx.logger)

@@ -52,7 +52,7 @@ def test_configuration_has_no_artist_library_or_age_or_count_defaults():
     text = json.dumps(config.styles.model_dump(), ensure_ascii=False)
     assert "12 years old" not in text and "solo" not in text
     assert "artist_presets" not in text
-    assert "@yuasa akira" in text
+    assert config.styles.presets == []
     with pytest.raises(ValidationError):
         Styles(presets=["A=flat", "A=other"])
 

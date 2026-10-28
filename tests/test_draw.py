@@ -850,6 +850,7 @@ def test_draw_first_eligible_submits_exactly_once_and_redacts_config(
     plugin, command, draw_setup, comfy_transport
 ):
     state, _, _ = draw_setup
+    plugin.config.styles.presets = ["千代风格=@yuasa akira, 简洁干净的二次元平涂画风"]
 
     async def run():
         await plugin.on_load()
@@ -1276,6 +1277,7 @@ def test_draw_poster_compiles_real_layout_and_keeps_exact_copy(
     state, _, _ = draw_setup
     state["poster"] = True
     command["text"] = "/moss 抽卡 少女，单人，海报标题“风起！”"
+    plugin.config.styles.presets = ["千代风格=@yuasa akira, 简洁干净的二次元平涂画风"]
 
     async def run():
         await plugin.on_load()

@@ -108,11 +108,46 @@ class StyleStore:
             raise ValueError("Invalid style operation receipts")
         self.state = state
 
+    def effective_library(self, config) -> dict[str, str]:
+        """Merge legacy config presets with the live chat-edited library.
+
+        Args:
+            config: Frozen plugin style configuration.
+
+        Returns:
+            Style names mapped to their complete visual text.
+        """
+        library = dict(parse_style_definition(item) for item in config.presets)
+        library.update(self.state["library"])
+        return library
+
+    def effective_names(self, config) -> list[str]:
+        """Return sorted style names for the read-only WebUI status section."""
+        return sorted(self.effective_library(config))
+
+    async def import_legacy(self, config) -> int:
+        """Copy legacy config presets into runtime storage without overwriting."""
+        async with self.lock:
+            state = copy.deepcopy(self.state)
+            imported = 0
+            for item in config.presets:
+                name, content = parse_style_definition(item)
+                if name in state["library"]:
+                    continue
+                if len(state["library"]) >= 64:
+                    break
+                state["library"][name] = content
+                imported += 1
+            if not imported:
+                return 0
+            await asyncio.to_thread(atomic_write, self.path, state)
+            self.state = state
+            return imported
+
     async def snapshot(self, names: tuple[str, ...], config) -> tuple[str, str]:
         """Capture explicitly named styles under the library lock."""
         async with self.lock:
-            library = dict(parse_style_definition(item) for item in config.presets)
-            library.update(self.state["library"])
+            library = self.effective_library(config)
             for name in names:
                 if name not in library:
                     raise ValueError(
@@ -123,8 +158,7 @@ class StyleStore:
     async def handle(self, request, task_id: str, config) -> list[str]:
         """Read or atomically edit the shared style library."""
         async with self.lock:
-            library = dict(parse_style_definition(item) for item in config.presets)
-            library.update(self.state["library"])
+            library = self.effective_library(config)
             if request.operation == "list":
                 return [
                     "MOSS 风格：",
