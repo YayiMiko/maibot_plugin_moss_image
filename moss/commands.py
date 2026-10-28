@@ -62,7 +62,9 @@ class ImageRequest:
 class StyleRequest:
     """A local preset operation, never an image-generation request."""
 
-    operation: Literal["list", "select", "edit", "create", "settings", "application"]
+    operation: Literal[
+        "list", "select", "edit", "create", "settings", "application", "disable"
+    ]
     name: str = ""
     content: str = ""
 
@@ -111,7 +113,7 @@ def parse_command(
                 "edit" if operation == "编辑" else "create", name, content
             )
         if arguments == "关闭":
-            raise ValueError("没有风格关闭指令，请使用 /moss 风格 查看已有风格。")
+            return "style", StyleRequest("disable")
         if "=" in arguments:
             raise ValueError("修改风格请使用 /moss 风格 编辑 名称=完整内容。")
         name, _ = parse_style_definition(arguments + "=selection")

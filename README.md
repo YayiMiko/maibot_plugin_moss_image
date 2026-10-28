@@ -30,6 +30,7 @@ Caption／Layout 规划，通过 ComfyUI 生图发送到 QQ，并支持图片法
 
 ```text
 /moss 风格 千代风格
+/moss 风格 关闭
 /moss 风格 新建 墨色=monochrome ink illustration,
 /moss 风格 编辑 墨色=monochrome ink illustration, restrained shading,
 /moss 风格 设置
@@ -40,7 +41,7 @@ Caption／Layout 规划，通过 ComfyUI 生图发送到 QQ，并支持图片法
 用途设置中，`1` 为仅用于「生成」，`2` 为用于「生成、漫画、表情包」（默认）。
 `/moss 规划`、`/moss 布局`、`/moss 抽卡` 始终不使用共通风格预设，反推和解析法术也不添加风格。
 插件配置 `styles.default_application` 可设置未选择时的默认值：`all` 或 `generate`。
-没有风格关闭指令。风格和用途选择仅影响同一用户、同一会话的后续任务；风格库共享，
+`/moss 风格 关闭` 停用风格预设，保留质量前缀、角色校正与用户要求。风格和用途选择仅影响同一用户、同一会话的后续任务；风格库共享，
 新建或编辑沿用宿主对 MOSS 命令的使用权限，不授予修改宿主配置的权限。
 聊天修改保存在插件私有 `styles.json`，覆盖配置中的同名风格；菜单会展示当前生效内容。
 

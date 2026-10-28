@@ -91,7 +91,8 @@ class StyleStore:
                 raise ValueError("Invalid stored style scope")
             if not isinstance(name, str):
                 raise ValueError("Invalid stored style selection")
-            parse_style_definition(name + "=selection")
+            if name != "":
+                parse_style_definition(name + "=selection")
         for scope, application in state["applications"].items():
             if (
                 not isinstance(scope, str)
@@ -133,6 +134,8 @@ class StyleStore:
             library = dict(parse_style_definition(item) for item in config.presets)
             library.update(self.state["library"])
             name = self.state["selections"].get(scope, config.default_style)
+            if name == "":
+                return "", ""
             if name not in library:
                 name = config.default_style
             return name, library.get(name, "")
@@ -172,13 +175,20 @@ class StyleStore:
             if request.operation == "list":
                 return [
                     "MOSS 风格：",
-                    "当前：" + (active if active in library else "未配置默认风格"),
+                    "当前："
+                    + (
+                        "不使用风格"
+                        if active == ""
+                        else active
+                        if active in library
+                        else "未配置默认风格"
+                    ),
                     "用途：" + usage,
                     *[
                         f"{name}：{content}"
                         for name, content in sorted(library.items())
                     ],
-                    "选择：/moss 风格 <名称>\n编辑：/moss 风格 编辑 名称=完整内容\n新建：/moss 风格 新建 名称=完整内容\n用途设置：/moss 风格 设置",
+                    "不使用风格：/moss 风格 关闭\n选择：/moss 风格 <名称>\n编辑：/moss 风格 编辑 名称=完整内容\n新建：/moss 风格 新建 名称=完整内容\n用途设置：/moss 风格 设置",
                     "风格库共享；聊天编辑覆盖同名配置项。选择仅影响你在本会话中的后续任务。",
                 ]
             if task_id in self.state["processed"]:
@@ -199,6 +209,14 @@ class StyleStore:
                     else "「生成、漫画、表情包」"
                 )
                 notice = f"已设为用于{usage}，仅影响你在本会话中的后续任务。「规划」「布局」「抽卡」不使用风格预设。"
+            elif request.operation == "disable":
+                if (
+                    scope not in state["selections"]
+                    and len(state["selections"]) >= 4096
+                ):
+                    return ["风格选择记录已达上限，请联系维护者。"]
+                state["selections"][scope] = ""
+                notice = "已关闭风格预设，仅影响你在本会话中的后续任务；质量前缀、角色校正和用户要求保留。"
             elif request.operation == "select":
                 if request.name not in library:
                     return ["没有找到该风格，请使用 /moss 风格 查看列表。"]

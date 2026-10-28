@@ -32,7 +32,7 @@ def test_style_edit_preserves_raw_artist_notation_and_prose(operation):
 
 @pytest.mark.parametrize(
     "text",
-    ["/moss 风格 关闭", "/moss 风格 A=B", "/moss 风格 编辑 A=", "/moss 风格 新建 =B"],
+    ["/moss 风格 A=B", "/moss 风格 编辑 A=", "/moss 风格 新建 =B"],
 )
 def test_invalid_or_removed_style_commands_never_generate(text):
     with pytest.raises(ValueError):
@@ -88,6 +88,58 @@ def test_style_store_persists_library_and_isolates_user_selections(tmp_path):
         assert "覆盖同名配置项" in "\n".join(
             await reloaded.handle(StyleRequest("list"), first, "d" * 24, config)
         )
+
+    asyncio.run(run())
+
+
+def test_disable_persists_and_preserves_other_scopes(tmp_path):
+    async def run():
+        config = Styles()
+        store = StyleStore(tmp_path)
+        await store.initialize()
+        first, second = "a" * 64, "b" * 64
+        action, request = parse_command("/moss 风格 关闭", MossConfig().rendering)
+        assert action == "style" and request.operation == "disable"
+        await store.handle(request, first, "a" * 24, config)
+        assert await store.snapshot(first, config) == ("", "")
+        assert (await store.snapshot(second, config))[0] == "千代风格"
+        reloaded = StyleStore(tmp_path)
+        await reloaded.initialize()
+        assert await reloaded.snapshot(first, config) == ("", "")
+        menu = "\n".join(
+            await reloaded.handle(StyleRequest("list"), first, "b" * 24, config)
+        )
+        assert "当前：不使用风格" in menu
+        await reloaded.handle(
+            StyleRequest("select", "千代风格"), first, "c" * 24, config
+        )
+        assert (await reloaded.snapshot(first, config))[0] == "千代风格"
+        assert await reloaded.snapshot(first, config, "draw") == ("", "")
+
+    asyncio.run(run())
+
+
+def test_disabled_style_keeps_direct_input_and_prefix(plugin, command, comfy_transport):
+    async def run():
+        await plugin.on_load()
+        scope = hashlib.sha256(
+            json.dumps(["qq", "stream", "user"]).encode()
+        ).hexdigest()
+        await plugin.styles.handle(
+            StyleRequest("disable"), scope, "a" * 24, plugin.config.styles
+        )
+        command["text"] = "/moss 生成 一只白猫"
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        payload = json.loads(
+            next(call.content for call in comfy_transport if call.url.path == "/prompt")
+        )
+        prompt = payload["prompt"]["4"]["inputs"]["text"]
+        assert (
+            "best quality" in prompt and "一只白猫" in prompt and "@yuasa" not in prompt
+        )
+        plugin.ctx.llm.generate.assert_not_awaited()
+        await plugin.on_unload()
 
     asyncio.run(run())
 
