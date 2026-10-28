@@ -24,6 +24,33 @@ def test_selectors_and_boundaries(route):
     )
 
 
+def test_escaped_quote_in_saved_name_reaches_generation(
+    plugin, command, comfy_transport
+):
+    _, request = parse_command(r'''/moss 生成 猫 +"狐\"'莉"''', MossConfig().rendering)
+    assert request.oc_names == ("狐\"'莉",)
+
+    async def run():
+        plugin.config.styles.presets = ["墨\"'色=INK"]
+        await plugin.on_load()
+        command["text"] = r'''/moss 生成 猫 @"墨\"'色"'''
+        try:
+            await plugin.handle_moss(**command)
+            await asyncio.gather(*list(plugin.jobs.values()))
+            payload = json.loads(
+                next(
+                    call.content
+                    for call in comfy_transport
+                    if call.url.path == "/prompt"
+                )
+            )
+            assert "INK" in payload["prompt"]["4"]["inputs"]["text"]
+        finally:
+            await plugin.on_unload()
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize(
     "text", ["/moss 生成 @墨色", "/moss 规划 +狐莉", "/moss 漫画 猫 --角色 狐莉"]
 )

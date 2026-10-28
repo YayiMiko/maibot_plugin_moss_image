@@ -151,12 +151,16 @@ def parse_command(
             index == 0 or body[index - 1] in " \t\r\n,，。!！?？;；:：、"
         ):
             match = re.match(
-                r"""([@+])(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s,，。.!！?？;；:：、@+"'()\[\]{}/\\]+))""",
+                r"""([@+])(?:"((?:\\"|[^"\r\n])+)"|'((?:\\'|[^'\r\n])+)'|([^\s,，。.!！?？;；:：、@+"'()\[\]{}/\\]+))""",
                 body[index:],
             )
             if match:
                 end = index + match.end()
                 value = next(x for x in match.groups()[1:] if x is not None)
+                if match.group(2) is not None:
+                    value = value.replace('\\"', '"')
+                elif match.group(3) is not None:
+                    value = value.replace("\\'", "'")
                 if (
                     end == len(body) or body[end] in " \t\r\n,，。!！?？;；:：、"
                 ) and not (character == "+" and value.isdecimal()):
