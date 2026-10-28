@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Reorganize the GitHub repository page around a concise Chinese About section and a task-oriented README, moving detailed command workflows to `docs/usage.md` and implementation details to `docs/development.md`.
 - Rebuild the WebUI configuration around Chinese labels, descriptions, examples and ordered sections. Keep common connection, draw, model and delivery fields visible while hiding rare model-file, budget and maintenance fields.
 - Add a read-only runtime status section generated on every config-page load, showing current style names, OC names, running jobs and config version without writing runtime data into `config.toml`.
 - Hide legacy `styles.presets`, import existing values into `styles.json` idempotently at startup, and stop adding a built-in style to new installations. Rename the character section to “OC 权限” because it only stores administrator IDs.

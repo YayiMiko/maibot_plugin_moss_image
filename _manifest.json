@@ -3,7 +3,7 @@
   "id": "yayimiko.moss-image",
   "name": "MOSS 绘图",
   "version": "0.2.7",
-  "description": "Direct-text MOSS images, official single-page comics and static memes, explicit OC presets, metadata and vision reverse prompting.",
+  "description": "MaiBot 的 MOSS 生图插件：原文直出、漫画/表情包、风格与 OC、图片反推，通过 ComfyUI 发送到 QQ。",
   "author": {"name": "YayiMiko", "url": "https://github.com/YayiMiko"},
   "urls": {"repository": "https://github.com/YayiMiko/maibot_plugin_moss_image"},
   "license": "MIT",

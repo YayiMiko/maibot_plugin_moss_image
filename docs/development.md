@@ -125,5 +125,68 @@ Use SDK 2.13.0 for ongoing local and CI validation, matching production. Do not
 recreate SDK 2.8.2 environments or add it back to the test matrix. Historical
 release compatibility declarations are not changed by this testing policy.
 
+## Prompt and identity behavior
+
+Generate uses the user's original description without LLM expansion, translation,
+tag cleaning or automatic backgrounds. It assembles the configured positive
+prefix, explicitly selected styles and deduplicated verified identity references.
+The prefix never applies to repair, reverse or draw routes.
+
+`/moss 规划` forces the official Caption path; `/moss 布局` forces the official
+natural-language expansion and Layout compiler. Both share the vendored skill and
+compiler, with at most one textual repair for invalid official JSON. Provider
+refusals, service errors and truncation are terminal, not retried with a default
+image. Saved `draft.json`, `compiled_prompt.txt` and `prompt.txt` distinguish the
+official path from `direct-input`.
+
+Optional Danbooru identity work is separate from generation. It uses an LLM to
+extract names and candidates, then Anima query evidence and category validation;
+unconfirmed names stay unverified, aliases merge, and already-present canonical
+tags are not appended twice. Research failures never block the original
+description. OC names and aliases are never sent to Danbooru.
+
+The bundled ComfyUI graph at `assets/comfyui/moss-int8-api.json` binds the native
+MOSS INT8 model, `moss_image` encoder, FLUX.2 VAE, Flow shift 5, the negative SLG
+layer 22 branch and the default Euler/sgm_uniform sampling settings. It updates
+only explicitly bound prompt, size, model and sampling fields; it does not infer
+positive/negative nodes from JSON order. The ComfyUI installation must provide
+the referenced native nodes and model files.
+
+## Tasks, delivery and retention
+
+Tasks are deduplicated by conversation, user and message ID. Each task owns a
+configuration snapshot, random seed and runtime directory. GPU submissions are
+serialized; delivery waiting does not hold the sampling lock, and cross-plugin
+GPU queuing belongs to ComfyUI. Each generation stores `content_prompt.txt`, the
+prefix snapshot, the final submitted prompt, configuration, workflow and result.
+
+Only a successful image send is a success. Uncertain remote submission or
+delivery is recorded as `remote_unknown` or `delivery_unknown`; it is never
+retried automatically, and the plugin never restarts ComfyUI globally. Reloading
+the plugin classifies old records but does not resume them. Long spell, reverse or
+style-menu output uses one forward card when it exceeds the configured threshold;
+an unknown receipt is never turned into a long-text resend.
+
+The latest raw LLM response is kept only in the private `last_llm_response.json`,
+up to four calls, with bounded text and truncation markers. A new task replaces
+it; late returns cannot overwrite a newer task. Parsing clears old calls, reverse
+stores this task's VLM response, and style/OC operations leave diagnostics alone.
+
+Finished records and task directories default to 30-day retention. Cleanup skips
+unknown remote jobs, active jobs, damaged records, orphan directories and linked
+targets. Deletion is irreversible; `0` disables time-based cleanup.
+
+## Verification
+
+```text
+uv sync --dev
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q -c pyproject.toml
+```
+
+Tests block real HTTP and use LLM, ComfyUI and QQ doubles. Offline success does
+not prove server loading, real tooling, QQ receipts or visual acceptance.
+
 New comments and logs are English. Use Google-style docstrings for non-obvious
 functions. Run Ruff, pytest, compile checks, resource hash checks and diff checks.
