@@ -15,7 +15,7 @@ from moss.references import (
     ReferenceError,
     canonical_page_key,
 )
-from moss.xsource import XReferenceClient, content_flags
+from moss.xsource import XReferenceClient, content_flags, status_id
 
 HISTORICAL_PROMPT_POSTS = [
     "How to create your baroque style portrait: use the tool, add this prompt, preserve the face.",
@@ -141,6 +141,40 @@ def test_candidate_confirms_same_post_and_prefers_og_media(monkeypatch):
         assert client.pages == 1
 
     __import__("asyncio").run(run())
+
+
+@pytest.mark.parametrize("data", [[], {"id_str": "123", "mediaDetails": 42}])
+def test_malformed_syndication_is_a_reference_failure(monkeypatch, data):
+    client = run_client(monkeypatch, FakeHTTP([], page_html(), data))
+
+    async def run():
+        with pytest.raises(ReferenceError) as failure:
+            await client.candidate("https://x.com/artist/status/123", 1)
+        assert failure.value.details["code"] == "association_unavailable"
+        assert failure.value.details["stage"] == "syndication"
+
+    __import__("asyncio").run(run())
+
+
+def test_redirect_to_different_post_is_not_associated(monkeypatch):
+    http = FakeHTTP([], page_html(), syndication_data())
+
+    def redirect(url, **kwargs):
+        if url == http.page_url:
+            return "https://x.com/artist/status/456", "text/html", page_html().encode()
+        return http(url, **kwargs)
+
+    client = run_client(monkeypatch, redirect)
+
+    async def run():
+        with pytest.raises(ReferenceError) as failure:
+            await client.candidate("https://x.com/artist/status/123", 1)
+        assert failure.value.details["code"] == "association_unavailable"
+        assert failure.value.details["stage"] == "page"
+        assert not http.calls
+
+    __import__("asyncio").run(run())
+    assert status_id("https://x.com/user/status/123extra") is None
 
 
 @pytest.mark.parametrize(

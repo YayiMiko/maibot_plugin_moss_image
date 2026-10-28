@@ -96,7 +96,7 @@ def status_id(url: str) -> str | None:
         parsed = urlsplit(url)
     except ValueError:
         return None
-    match = re.match(r"^/(?:i/|[^/]+/)status/(\d+)", parsed.path)
+    match = re.match(r"^/(?:i/|[^/]+/)status/(\d+)(?:/|$)", parsed.path)
     if parsed.hostname in STATUS_HOSTS and match:
         return match.group(1)
     return None
@@ -252,6 +252,8 @@ class XReferenceClient:
         page_url, page_media, page_body = await fetch_public(
             canonical, limit=512 * 1024, stage="page"
         )
+        if status_id(page_url) != tweet_id:
+            raise ReferenceError("association_unavailable", stage="page", url=page_url)
         if page_media not in {"text/html", "application/xhtml+xml"}:
             raise ReferenceError(
                 "unexpected_page_type", stage="page", url=page_url, status=200
@@ -276,22 +278,31 @@ class XReferenceClient:
             raise ReferenceError(
                 "association_unavailable", stage="syndication", url=sync_url
             ) from None
-        if str(data.get("id_str") or data.get("id") or "") != tweet_id:
+        if (
+            not isinstance(data, dict)
+            or str(data.get("id_str") or data.get("id") or "") != tweet_id
+        ):
             raise ReferenceError(
                 "association_unavailable", stage="syndication", url=sync_url
             )
         text = str(data.get("text") or "")
         flags = content_flags(text)
         photos = []
-        for item in data.get("mediaDetails") or []:
+        media_details = data.get("mediaDetails") or []
+        if not isinstance(media_details, list):
+            raise ReferenceError(
+                "association_unavailable", stage="syndication", url=sync_url
+            )
+        for item in media_details:
             if not isinstance(item, dict) or item.get("type") != "photo":
                 continue
             media_url = item.get("media_url_https")
-            match = MEDIA_RE.search(media_url or "")
+            match = MEDIA_RE.search(media_url) if isinstance(media_url, str) else None
             if not media_url or not match:
                 continue
-            sizes = item.get("sizes") or {}
-            large = sizes.get("large") or {}
+            sizes = item.get("sizes")
+            large = sizes.get("large") if isinstance(sizes, dict) else None
+            large = large if isinstance(large, dict) else {}
             photos.append(
                 {
                     "media_id": match.group(1),
