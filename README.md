@@ -3,7 +3,7 @@
 独立 MaiBot 插件：支持原文直出生图、官方 MOSS-Image Prompt Enhancer
 Caption／Layout 规划，通过 ComfyUI 生图发送到 QQ，并支持图片法术解析与视觉反推。
 
-当前版本：[v0.2.1](https://github.com/YayiMiko/maibot_plugin_moss_image/releases/tag/v0.2.1)。离线验证、服务器部署与真实 QQ 收图和画面验收分开进行。
+当前版本：[v0.2.7](https://github.com/YayiMiko/maibot_plugin_moss_image/tree/v0.2.7)。离线验证、服务器部署与真实 QQ 收图和画面验收分开进行。
 `main` 的后续提交仍可能包含未发布功能，不能把版本号或离线通过当作实图验收。
 
 [源码](https://github.com/YayiMiko/maibot_plugin_moss_image) · [更新记录](docs/CHANGELOG.md) · [开发说明](docs/development.md)
