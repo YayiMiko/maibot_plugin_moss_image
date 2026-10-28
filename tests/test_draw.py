@@ -1591,7 +1591,7 @@ def test_draw_search_outage_after_template_rejection_keeps_evidence(
         record = json.loads(
             next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
         )
-        assert record["error_kind"] == "no_usable_template"
+        assert record["error_kind"] == "mixed_reference_failure"
         assert state["searches"] == 2 and state["reviews"] == 1
         assert not comfy_transport
         reviews = json.loads(
@@ -1600,6 +1600,33 @@ def test_draw_search_outage_after_template_rejection_keeps_evidence(
             )
         )
         assert [item["outcome"] for item in reviews] == ["unusable"]
+        await plugin.on_unload()
+
+    asyncio.run(run())
+
+
+def test_draw_unreadable_and_rejected_candidates_are_mixed(
+    plugin, command, draw_setup, comfy_transport, monkeypatch
+):
+    state, _, _ = draw_setup
+    monkeypatch.setattr("moss.draw.random.Random.shuffle", lambda self, items: None)
+    state["result_sets"] = [
+        [{"url": f"https://art.example.com/works/{i}"} for i in range(2)],
+        [],
+    ]
+    state["page_failures"] = ["https://art.example.com/works/0"]
+    state["reject"] = 1
+
+    async def run():
+        await plugin.on_load()
+        await plugin.handle_moss(**command)
+        await asyncio.gather(*list(plugin.jobs.values()))
+        record = json.loads(
+            next(plugin.store.records.glob("*.json")).read_text(encoding="utf-8")
+        )
+        assert record["error_kind"] == "mixed_reference_failure"
+        assert state["reviews"] == 1
+        assert not comfy_transport
         await plugin.on_unload()
 
     asyncio.run(run())

@@ -692,6 +692,10 @@ class DrawPlanner:
                         if any(item["outcome"] == "unusable" for item in reviews)
                         else "invalid_review"
                     )
+                if last_search_failed or any(
+                    item.get("outcome") == "unreadable" for item in references
+                ):
+                    raise DrawError("mixed_reference_failure")
                 raise DrawError("no_usable_template")
             candidate, content, blueprint = chosen
             if not request.canvas_explicit:

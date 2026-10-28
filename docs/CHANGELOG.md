@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Clarify that a visual reference can transfer its composition and other relationships even when its subject, format or typography differs from the requested image. Keep provider refusals terminal and preserve explicit user constraints.
+- Report mixed reference-read and suitability failures, including a failed fallback search, without presenting the entire attempt as a template rejection.
+
 ## v0.2.7 — 2026-10-28
 
 - Require explicit `@style` and `+OC` selectors across supported commands, preserving saved libraries and verified canonical-character recognition. Existing selection state is no longer applied automatically.
