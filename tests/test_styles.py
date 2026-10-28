@@ -2,7 +2,6 @@
 
 import asyncio
 import copy
-import hashlib
 import json
 import threading
 
@@ -55,91 +54,27 @@ def test_configuration_has_no_artist_library_or_age_or_count_defaults():
     assert "artist_presets" not in text
     assert "@yuasa akira" in text
     with pytest.raises(ValidationError):
-        Styles(presets=["A=flat", "A=other"], default_style="A")
-    with pytest.raises(ValidationError):
-        Styles(default_style="missing")
+        Styles(presets=["A=flat", "A=other"])
 
 
-def test_style_store_persists_library_and_isolates_user_selections(tmp_path):
+def test_style_store_preserves_library_and_freezes_snapshots(tmp_path):
     async def run():
         store = StyleStore(tmp_path)
         await store.initialize()
         config = Styles()
-        first, second = "a" * 64, "b" * 64
         await store.handle(
-            StyleRequest("create", "测试", "ink, @artist name,"),
-            first,
-            "a" * 24,
-            config,
+            StyleRequest("create", "测试", "ink"), "a" * 64, "a" * 24, config
         )
-        await store.handle(StyleRequest("select", "测试"), first, "b" * 24, config)
-        assert await store.snapshot(first, config) == ("测试", "ink, @artist name,")
-        assert (await store.snapshot(second, config))[0] == "千代风格"
-        frozen = await store.snapshot(first, config)
-        await store.handle(StyleRequest("edit", "测试", "NEW"), first, "c" * 24, config)
-        assert frozen[1] == "ink, @artist name,"
-        assert (await store.snapshot(first, config))[1] == "NEW"
-        # A repeated message cannot overwrite a later edit.
-        await store.handle(StyleRequest("edit", "测试", "OLD"), first, "c" * 24, config)
-        assert (await store.snapshot(first, config))[1] == "NEW"
+        frozen = await store.snapshot(("测试",), config)
+        await store.handle(
+            StyleRequest("edit", "测试", "new"), "a" * 64, "b" * 24, config
+        )
+        assert frozen == ("测试", "ink")
+        assert await store.snapshot(("测试",), config) == ("测试", "new")
+        assert await store.snapshot((), config) == ("", "")
         reloaded = StyleStore(tmp_path)
         await reloaded.initialize()
-        assert await reloaded.snapshot(first, config) == ("测试", "NEW")
-        assert "覆盖同名配置项" in "\n".join(
-            await reloaded.handle(StyleRequest("list"), first, "d" * 24, config)
-        )
-
-    asyncio.run(run())
-
-
-def test_disable_persists_and_preserves_other_scopes(tmp_path):
-    async def run():
-        config = Styles()
-        store = StyleStore(tmp_path)
-        await store.initialize()
-        first, second = "a" * 64, "b" * 64
-        action, request = parse_command("/moss 风格 关闭", MossConfig().rendering)
-        assert action == "style" and request.operation == "disable"
-        await store.handle(request, first, "a" * 24, config)
-        assert await store.snapshot(first, config) == ("", "")
-        assert (await store.snapshot(second, config))[0] == "千代风格"
-        reloaded = StyleStore(tmp_path)
-        await reloaded.initialize()
-        assert await reloaded.snapshot(first, config) == ("", "")
-        menu = "\n".join(
-            await reloaded.handle(StyleRequest("list"), first, "b" * 24, config)
-        )
-        assert "当前：不使用风格" in menu
-        await reloaded.handle(
-            StyleRequest("select", "千代风格"), first, "c" * 24, config
-        )
-        assert (await reloaded.snapshot(first, config))[0] == "千代风格"
-        assert await reloaded.snapshot(first, config, "draw") == ("", "")
-
-    asyncio.run(run())
-
-
-def test_disabled_style_keeps_direct_input_and_prefix(plugin, command, comfy_transport):
-    async def run():
-        await plugin.on_load()
-        scope = hashlib.sha256(
-            json.dumps(["qq", "stream", "user"]).encode()
-        ).hexdigest()
-        await plugin.styles.handle(
-            StyleRequest("disable"), scope, "a" * 24, plugin.config.styles
-        )
-        command["text"] = "/moss 生成 一只白猫"
-        await plugin.handle_moss(**command)
-        await asyncio.gather(*list(plugin.jobs.values()))
-        payload = json.loads(
-            next(call.content for call in comfy_transport if call.url.path == "/prompt")
-        )
-        prompt = payload["prompt"]["4"]["inputs"]["text"]
-        assert (
-            "best quality" in prompt and "一只白猫" in prompt and "@yuasa" not in prompt
-        )
-        plugin.ctx.llm.generate.assert_not_awaited()
-        await plugin.on_unload()
+        assert await reloaded.snapshot(("测试",), config) == ("测试", "new")
 
     asyncio.run(run())
 
@@ -162,10 +97,6 @@ def test_style_commands_do_not_call_models_or_clear_latest_diagnostic(plugin, co
                 "/moss 风格",
                 "/moss 风格 新建 测试=flat, @artist",
                 "/moss 风格 编辑 测试=ink",
-                "/moss 风格 测试",
-                "/moss 风格 设置",
-                "/moss 风格 设置 1",
-                "/moss 风格 设置 2",
             )
         ):
             request = copy.deepcopy(command)
@@ -179,10 +110,7 @@ def test_style_commands_do_not_call_models_or_clear_latest_diagnostic(plugin, co
             diagnostic.read_text(encoding="utf-8")
             == '{"sentinel":"previous generation"}'
         )
-        scope = hashlib.sha256(
-            json.dumps(["qq", "stream", "user"]).encode()
-        ).hexdigest()
-        assert await plugin.styles.snapshot(scope, plugin.config.styles) == (
+        assert await plugin.styles.snapshot(("测试",), plugin.config.styles) == (
             "测试",
             "ink",
         )

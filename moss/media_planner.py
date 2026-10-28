@@ -374,6 +374,21 @@ async def plan_media(planner, request, config, evidence, record_response):
                     )
                     + "."
                 )
+            if request.oc_context:
+                sections.append(
+                    "Explicit original character references, same subjects; user clothing and actions take precedence: "
+                    + "; ".join(
+                        item["name"]
+                        + ": "
+                        + item["description"]
+                        + (
+                            "; default outfit: " + item["default_outfit"]
+                            if item["default_outfit"]
+                            else ""
+                        )
+                        for item in request.oc_context["characters"]
+                    )
+                )
             sections.append(body)
             target["caption"] = "\n\n".join(sections)
             prompt = planner.skill.compile(

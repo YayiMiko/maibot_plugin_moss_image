@@ -298,7 +298,7 @@ def test_runtime_submits_exact_saved_identity_bound_prompt(
     board, draft, evidence, extraction = media_inputs(kind)
     route = "漫画" if kind == "comic" else "表情包"
     command["text"] = (
-        f"/moss {route} 荧与纳西妲休息"
+        f"/moss {route} 荧与纳西妲休息 @千代风格"
         + ("，配字“你好”" if kind == "lettered" else "")
         + " --尺寸 1024x1024"
     )

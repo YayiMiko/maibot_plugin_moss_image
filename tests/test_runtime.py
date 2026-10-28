@@ -348,7 +348,7 @@ def test_atomic_storage_replaces_without_leftover_temp(tmp_path):
 def test_generate_saves_original_body_prefixes_and_exact_submitted_prompt(
     plugin, command, comfy_transport
 ):
-    command["text"] = "/moss 生成 白猫睡在窗边"
+    command["text"] = "/moss 生成 @千代风格 白猫睡在窗边"
     plugin.ctx.llm.generate.side_effect = AssertionError(
         "Direct generation must not call a body planner"
     )

@@ -1,6 +1,5 @@
 """Effective model, sampling and style configuration for explicit commands."""
 
-from typing import Literal
 from urllib.parse import urlparse
 
 from maibot_sdk import Field, PluginConfigBase
@@ -127,21 +126,14 @@ class Styles(PluginConfigBase):
         max_length=64,
         description="名称=完整风格内容；不做画师格式转换。聊天编辑会覆盖同名项。人数由用户要求和正文决定。",
     )
-    default_style: str = Field(default="千代风格", max_length=80)
-    default_application: Literal["generate", "all"] = Field(
-        default="all",
-        description="风格默认用途：generate=仅生成；all=生成、漫画、表情包。规划、布局、抽卡始终不加风格预设。可在 /moss 风格 设置 中为当前用户和会话选择。",
-    )
 
     @model_validator(mode="after")
     def valid_library(self):
-        """Reject ambiguous duplicate names and missing configured defaults."""
+        """Reject ambiguous duplicate names."""
         entries = [parse_style_definition(item) for item in self.presets]
         names = [name for name, _ in entries]
         if len(names) != len(set(names)):
             raise ValueError("Duplicate style preset names")
-        if self.default_style and self.default_style not in names:
-            raise ValueError("Default style must name a configured preset")
         return self
 
 

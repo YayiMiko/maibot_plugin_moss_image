@@ -168,6 +168,30 @@ class MossPlugin(MaiBotPlugin):
             if not bot_id or any(target != bot_id for target in mentions):
                 return False, None, 0
             text = text[match.start("command") :]
+        segments = message.get("raw_message")
+        if isinstance(segments, list):
+            seen_command = False
+            has_inline_mention = False
+            parts = []
+            for segment in segments:
+                if not isinstance(segment, dict):
+                    continue
+                kind, data = segment.get("type"), segment.get("data")
+                if kind == "text" and isinstance(data, str):
+                    if not seen_command:
+                        start = re.search(r"(?i)/moss(?=\s|$)", data)
+                        if start:
+                            seen_command = True
+                            parts.append(data[start.start() :])
+                    else:
+                        parts.append(data)
+                elif seen_command and kind == "at":
+                    has_inline_mention = True
+                    parts.append(" ")
+                elif seen_command and kind == "image":
+                    parts.append(" [image] ")
+            if has_inline_mention:
+                text = "".join(parts)
         config = self.config.model_copy(deep=True)
         stream, user = str(kwargs["stream_id"]), str(kwargs["user_id"])
         if not config.connection.enabled or (
@@ -224,27 +248,20 @@ class MossPlugin(MaiBotPlugin):
             if len(self.jobs) >= config.connection.max_pending:
                 await self.runner.notice("MOSS 队列已满，请稍后再试。", stream)
                 return True, None, 2
-            if action == "generate" and (
-                request.mode == "generate" or request.task_type != "illustration"
-            ):
-                style_name, style_prompt = await self.styles.snapshot(
-                    scope,
-                    config.styles,
-                    request.task_type,
-                )
-                request = replace(
-                    request,
-                    positive_prefix=config.styles.positive_prefix
-                    if request.mode == "generate"
-                    else "",
-                    style_name=style_name,
-                    style_prompt=style_prompt,
-                )
-            if action in {"generate", "draw"} and request.oc_names:
+            if action in {"generate", "draw"}:
                 try:
+                    style_name, style_prompt = await self.styles.snapshot(
+                        request.style_names, config.styles
+                    )
+                    oc_context = await self.characters.snapshot(request.oc_names)
                     request = replace(
                         request,
-                        oc_context=await self.characters.snapshot(request.oc_names),
+                        positive_prefix=config.styles.positive_prefix
+                        if request.mode == "generate" and action == "generate"
+                        else "",
+                        style_name=style_name,
+                        style_prompt=style_prompt,
+                        oc_context=oc_context,
                     )
                 except ValueError as exc:
                     await self.runner.notice(str(exc), stream)

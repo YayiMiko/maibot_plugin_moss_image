@@ -404,7 +404,7 @@ def test_generate_preserves_original_with_frozen_context_without_model_calls(
 
 
 @pytest.mark.parametrize("mode", ["caption", "layout"])
-def test_pure_skill_routes_ignore_generate_prefix_and_style(mode):
+def test_pure_skill_routes_keep_explicit_style_without_quality_prefix(mode):
     draft = {"caption": "A red cup."} if mode == "caption" else layout()
     planner, ctx, _ = make_planner([{"success": True, "response": json.dumps(draft)}])
     request = ImageRequest(
@@ -412,13 +412,14 @@ def test_pure_skill_routes_ignore_generate_prefix_and_style(mode):
         1024,
         1024,
         mode,
-        positive_prefix="DO NOT ADD",
+        positive_prefix="QUALITY_ONLY",
         style_name="PRIVATE",
-        style_prompt="DO NOT ADD STYLE",
+        style_prompt="EXPLICIT_STYLE",
     )
     plan = asyncio.run(planner.plan(request, Planning(danbooru_enabled=False)))
     assert plan.prompt == plan.compiled_prompt and plan.prefixes == {}
-    assert "DO NOT ADD" not in plan.prompt
+    assert "QUALITY_ONLY" not in plan.prompt
+    assert "EXPLICIT_STYLE" in plan.prompt
     payload = json.loads(ctx.llm.generate.call_args.args[0][1]["content"])
     assert "locked_prefixes" not in payload
 

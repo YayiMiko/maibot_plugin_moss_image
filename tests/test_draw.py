@@ -421,7 +421,8 @@ def test_draw_explicit_oc_reaches_prompt_without_canonical_lookup(
 ):
     state, _, _ = draw_setup
     marker = "OCMARK silver fox ears, emerald scarf"
-    command["text"] = f"/moss 抽卡 {oc_name}穿雨衣 --角色 小狐"
+    command["text"] = f"/moss 抽卡 {oc_name}穿雨衣 +小狐 @测试"
+    plugin.config.styles.presets = ["测试=STYLE_PRIVATE_MARKER"]
 
     async def run():
         await plugin.on_load()
@@ -443,6 +444,7 @@ def test_draw_explicit_oc_reaches_prompt_without_canonical_lookup(
         directory = plugin.store.runtime / record["task_id"]
         final_prompt = (directory / "prompt.txt").read_text(encoding="utf-8")
         assert marker in final_prompt
+        assert final_prompt.count("STYLE_PRIVATE_MARKER") == 1
         assert f"{oc_name} = {oc_name}" in final_prompt
         assert "cartethyia_(wuthering_waves)" not in final_prompt
         resolver.assert_not_awaited()
@@ -460,6 +462,8 @@ def test_draw_explicit_oc_reaches_prompt_without_canonical_lookup(
             if messages[0]["content"].startswith("Prepare a discovery")
         )
         assert marker not in brief[1]["content"]
+        assert "STYLE_PRIVATE_MARKER" not in brief[1]["content"]
+        assert payload["selected_style"] == "STYLE_PRIVATE_MARKER"
         assert sum(call.url.path == "/prompt" for call in comfy_transport) == 1
         await plugin.on_unload()
 
@@ -471,7 +475,7 @@ def test_draw_mixed_canon_and_oc_keeps_canon_verification(
 ):
     state, _, _ = draw_setup
     marker = "OCMARK moon-pale hair, violet coat"
-    command["text"] = "/moss 抽卡 卡缇希娅和狐莉 --角色 狐莉"
+    command["text"] = "/moss 抽卡 卡缇希娅和狐莉 +狐莉"
 
     async def run():
         await plugin.on_load()
@@ -1221,16 +1225,6 @@ def test_draw_disabled_attachment_and_style_scope_boundaries(plugin, command):
         await plugin.handle_moss(**command)
         assert not plugin.jobs
         plugin.ctx.llm.generate.assert_not_awaited()
-        plugin.config.styles.default_application = "generate"
-        assert await plugin.styles.snapshot("a" * 64, plugin.config.styles, "draw") == (
-            "",
-            "",
-        )
-        plugin.config.styles.default_application = "all"
-        assert await plugin.styles.snapshot("a" * 64, plugin.config.styles, "draw") == (
-            "",
-            "",
-        )
         await plugin.on_unload()
 
     asyncio.run(run())

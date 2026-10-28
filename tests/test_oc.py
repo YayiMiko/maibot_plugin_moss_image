@@ -31,7 +31,6 @@ def test_role_submenu_and_optional_fields_are_parsed():
         "删除 ../A",
         "新建 --角色=x",
         "编辑 A=B\x00",
-        "别名 bad name=x",
     ],
 )
 def test_invalid_role_subcommands_fail_before_storage(arguments):
@@ -105,7 +104,7 @@ def test_corrupt_oc_data_is_not_silently_replaced(tmp_path):
 
 @pytest.mark.parametrize(
     "suffix",
-    ["--角色 狐莉 --角色 小狐", "--角色 狐莉，比例4：3", "--角色 狐莉 --格数 3"],
+    ["+狐莉 +小狐", "+狐莉，比例4：3", "+狐莉 --格数 3"],
 )
 def test_role_controls_do_not_enter_media_description(suffix):
     _, request = parse_command("/moss 漫画 抢包子 " + suffix, MossConfig().rendering)
@@ -175,7 +174,7 @@ def test_role_commands_do_not_use_llm_and_snapshots_are_request_local(
         plugin.ctx.llm.generate.assert_not_awaited()
         assert not comfy_transport
         command["message"]["message_id"] = "next"
-        command["text"] = "/moss 生成 狐莉穿雨衣 --角色 狐莉"
+        command["text"] = "/moss 生成 狐莉穿雨衣 +狐莉"
         await plugin.handle_moss(**command)
         await plugin.characters.handle(
             parse_role("编辑 狐莉=NEW APPEARANCE"), "user", [], "d" * 24
@@ -198,7 +197,7 @@ def test_role_commands_do_not_use_llm_and_snapshots_are_request_local(
 
 
 def test_missing_oc_does_not_submit_any_generation(plugin, command, comfy_transport):
-    command["text"] = "/moss 生成 狐莉 --角色 不存在"
+    command["text"] = "/moss 生成 狐莉 +不存在"
 
     async def run():
         await plugin.on_load()
@@ -212,7 +211,7 @@ def test_missing_oc_does_not_submit_any_generation(plugin, command, comfy_transp
 
 
 def test_missing_oc_blocks_draw_before_discovery(plugin, command, comfy_transport):
-    command["text"] = "/moss 抽卡 狐莉 --角色 不存在"
+    command["text"] = "/moss 抽卡 狐莉 +不存在"
 
     async def run():
         await plugin.on_load()
@@ -249,8 +248,6 @@ def test_invalid_natural_panel_counts_are_explained(body):
 
 
 def test_role_alias_is_not_mistaken_for_a_canvas_control():
-    _, request = parse_command(
-        "/moss 漫画 抢包子 --角色 比例4:3", MossConfig().rendering
-    )
+    _, request = parse_command('/moss 漫画 抢包子 +"比例4:3"', MossConfig().rendering)
     assert request.oc_names == ("比例4:3",) and request.prompt == "抢包子"
     assert request.width < request.height

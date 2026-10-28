@@ -18,8 +18,7 @@ profiles; profiles and calibration are removed. Ignore obsolete profile
 configuration without reading or deleting old user files. Preserve private key
 redaction and public-only fetching. See aesthetic-draw.md. Real model/image
 acceptance remains separate from offline checks.
-Draw always excludes common style presets and fixed quality prefixes, including
-the all-style setting; preserve visual styles explicitly written in its request.
+Draw uses only explicitly selected style snapshots and excludes fixed quality prefixes; keep style contents out of reference searches.
 Brief constraints must quote original user spans only. Brief and export each get at
 most one bounded structural correction, still inside the shared model-call budget and
 prepare deadline; provider refusal never triggers a correction.
@@ -93,7 +92,7 @@ identification may use the LLM; failures must not block direct generation.
 Assemble frozen prefixes, styles and deduplicated verified identity references
 without adding default appearances or subjects.
 Reverse uses the host VLM and returns observed image tags without style injection.
-Caption and Layout modes remain unwrapped. Never clean
+Caption and Layout modes use explicit style snapshots in the official draft. Never clean
 Caption prose as a comma-separated tag list or invent an extra artist library.
 
 Keep tasks, configuration, destinations and outputs request-local. Never read a

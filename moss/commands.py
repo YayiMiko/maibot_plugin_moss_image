@@ -17,7 +17,7 @@ HELP = (
     "/moss 表情包 <要求>：单张静态表情包\n"
     "/moss 抽卡 <要求>：联网精选参考，改编生一张图\n"
     "/moss 角色：OC 查看、管理与调用方法\n"
-    "/moss 风格：查看、选择、新建或编辑风格\n"
+    "/moss 风格：查看、新建或编辑风格\n"
     "/moss 解析法术：附图/引用，读取原始提示词\n"
     "/moss 反推：附图/引用单图，视觉推测提示词，非原词\n"
     "生图画幅：末尾写 比例4：3，或 --尺寸 1024x1024（宽×高像素）"
@@ -50,6 +50,7 @@ class ImageRequest:
     mode: Literal["generate", "caption", "layout"] = "caption"
     task_type: Literal["illustration", "comic_page", "meme"] = "illustration"
     positive_prefix: str = ""
+    style_names: tuple[str, ...] = ()
     style_name: str = ""
     style_prompt: str = ""
     oc_context: dict | None = None
@@ -62,9 +63,7 @@ class ImageRequest:
 class StyleRequest:
     """A local preset operation, never an image-generation request."""
 
-    operation: Literal[
-        "list", "select", "edit", "create", "settings", "application", "disable"
-    ]
+    operation: Literal["list", "edit", "create"]
     name: str = ""
     content: str = ""
 
@@ -99,25 +98,14 @@ def parse_command(
         parts = arguments.split(maxsplit=1)
         operation = parts[0]
         value = parts[1] if len(parts) > 1 else ""
-        if operation == "设置":
-            if not value:
-                return "style", StyleRequest("settings")
-            if value not in {"1", "2"}:
-                raise ValueError("请使用 /moss 风格 设置 1 或 /moss 风格 设置 2。")
-            return "style", StyleRequest(
-                "application", content="generate" if value == "1" else "all"
-            )
         if operation in {"编辑", "新建"}:
             name, content = parse_style_definition(value.strip())
             return "style", StyleRequest(
                 "edit" if operation == "编辑" else "create", name, content
             )
-        if arguments == "关闭":
-            return "style", StyleRequest("disable")
-        if "=" in arguments:
-            raise ValueError("修改风格请使用 /moss 风格 编辑 名称=完整内容。")
-        name, _ = parse_style_definition(arguments + "=selection")
-        return "style", StyleRequest("select", name)
+        raise ValueError(
+            "请用 @风格名称 在每次绘图请求中调用；用 /moss 风格 查看和管理。"
+        )
     if keyword in REMOVED:
         raise ValueError("该指令已移除或未开放，请使用 /moss 查看可用写法。")
     if keyword == "反推":
@@ -142,10 +130,13 @@ def parse_command(
     task_type = {"漫画": "comic_page", "表情包": "meme"}.get(keyword, "illustration")
     draw = keyword == "抽卡"
     body = body[len(keyword) :].strip()
-    # Mask literal text without changing offsets into the original input.
+    # A selector is recognized only at a token boundary, outside quoted prose.
     masked = list(body)
+    selectors = []
     quote, escaped = "", False
-    for index, character in enumerate(body):
+    index = 0
+    while index < len(body):
+        character = body[index]
         if quote:
             masked[index] = "\ufffc"
             if escaped:
@@ -154,7 +145,33 @@ def parse_command(
                 escaped = True
             elif character == quote:
                 quote = ""
-        elif character in {'"', "“", "‘", "「", "『"} or (
+            index += 1
+            continue
+        if character in "@+" and (
+            index == 0 or body[index - 1] in " \t\r\n,，。!！?？;；:：、"
+        ):
+            match = re.match(
+                r"""([@+])(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s,，。.!！?？;；:：、@+"'()\[\]{}/\\]+))""",
+                body[index:],
+            )
+            if match:
+                end = index + match.end()
+                value = next(x for x in match.groups()[1:] if x is not None)
+                if (
+                    end == len(body) or body[end] in " \t\r\n,，。!！?？;；:：、"
+                ) and not (character == "+" and value.isdecimal()):
+                    selectors.append(
+                        (
+                            index,
+                            end,
+                            match.group(1),
+                            value,
+                        )
+                    )
+                    masked[index:end] = "\ufffc" * (end - index)
+                    index = end
+                    continue
+        if character in {'"', "“", "‘", "「", "『"} or (
             character == "'"
             and (index == 0 or not re.match(r"[a-zA-Z0-9]", body[index - 1]))
             and "'" in body[index + 1 :]
@@ -163,22 +180,27 @@ def parse_command(
                 character
             ]
             masked[index] = "\ufffc"
+        index += 1
+    style_names = tuple(
+        dict.fromkeys(value for _, _, kind, value in selectors if kind == "@")
+    )
+    oc_names = tuple(
+        dict.fromkeys(
+            role_name(value) for _, _, kind, value in selectors if kind == "+"
+        )
+    )
+    if len(style_names) > 8 or len(oc_names) > 8:
+        raise ValueError("一次最多指定 8 个风格和 8 个 OC 角色。")
     flags_text = "".join(masked)
     boundary = r"(?<![^\s,，。.!！?？;；:：、])"
     ending = r"(?=$|[\s,，。.!！?？;；、])(?!\.\d)"
-    role_matches = list(
-        re.finditer(boundary + r"--角色\s+([^\s,，;；、]+)", flags_text)
-    )
-    oc_names = tuple(dict.fromkeys(role_name(match[1]) for match in role_matches))
-    if len(oc_names) > 8:
-        raise ValueError("一次最多指定 8 个 OC 角色。")
     panel_matches = list(re.finditer(boundary + r"--格数\s+(\d+)" + ending, flags_text))
-    controls = role_matches + panel_matches
+    controls = panel_matches
     if any(
         marker.start() not in {match.start() for match in controls}
         for marker in re.finditer(r"--角色|--格数", flags_text)
     ):
-        raise ValueError("角色写法为 --角色 名称；漫画格数写法为 --格数 3。")
+        raise ValueError("角色请使用 +名称；漫画格数写法为 --格数 3。")
     panel_count = int(panel_matches[0][1]) if panel_matches else None
     if panel_matches and (
         len(panel_matches) != 1
@@ -266,12 +288,10 @@ def parse_command(
     if width * height > rendering.max_megapixels * 1024 * 1024:
         raise ValueError("画幅超过配置的像素上限，请减小尺寸或调整插件配置。")
     # Remove only recognized canvas clauses and their adjacent clause separator.
-    for match in sorted(
-        size_matches + ratio_matches + controls,
-        key=lambda item: item.start(),
-        reverse=True,
-    ):
-        start, end = match.span()
+    spans = [match.span() for match in size_matches + ratio_matches + controls] + [
+        (start, end) for start, end, _, _ in selectors
+    ]
+    for start, end in sorted(spans, reverse=True):
         left = start
         while left and body[left - 1] in " \t":
             left -= 1
@@ -293,6 +313,7 @@ def parse_command(
         mode,
         task_type=task_type,
         oc_names=oc_names,
+        style_names=style_names,
         panel_count=panel_count,
         canvas_explicit=bool(size_matches or ratio_matches) if draw else True,
     )

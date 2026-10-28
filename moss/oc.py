@@ -30,11 +30,11 @@ def role_name(value: str) -> str:
         not isinstance(value, str)
         or not value
         or len(value) > 80
-        or re.search(r"[\s,，、;；=@()[\]{}\x00\ufffc/\\]", value)
+        or re.search(r"[\t\r\n,，、;；=@+()[\]{}\x00\ufffc/\\]", value)
         or value.startswith("--")
         or value in {"新建", "编辑", "删除", "服装", "别名"}
     ):
-        raise ValueError("角色名称最多 80 字，不能含空格、逗号、等号或命令关键字。")
+        raise ValueError("角色名称最多 80 字，不能含逗号、等号或命令关键字。")
     return value
 
 
@@ -222,7 +222,7 @@ class OCStore:
                         f"{key}：{value['description'][:100]}"
                         for key, value in sorted(library.items())
                     ],
-                    "查看：/moss 角色 名称\n新建：/moss 角色 新建 名称=稳定外观\n编辑：/moss 角色 编辑 名称=稳定外观\n服装：/moss 角色 服装 名称=默认服装\n别名：/moss 角色 别名 名称=别名1,别名2\n删除：/moss 角色 删除 名称\n调用：生图指令末尾加 --角色 名称，可重复指定多个角色。",
+                    '查看：/moss 角色 名称\n新建：/moss 角色 新建 名称=稳定外观\n编辑：/moss 角色 编辑 名称=稳定外观\n服装：/moss 角色 服装 名称=默认服装\n别名：/moss 角色 别名 名称=别名1,别名2\n删除：/moss 角色 删除 名称\n调用：每次生图要求中加 +名称；名称含空格时写 +"角色 名"。可重复指定；只写选择器时需补充绘图要求。',
                     "读取共享；修改和删除限创建者或配置中的角色库管理员。默认服装与身份分开，原文直出不自动拼默认服装。",
                 ]
             if request.operation == "show":
