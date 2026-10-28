@@ -4,6 +4,18 @@ This is an independent MaiBot plugin, not AstrBot core or the Anima plugin.
 Use public MaiBot SDK APIs only. Never modify sibling projects, host persona,
 account permissions, local ComfyUI workflows or live service configuration.
 
+## Repository layout
+
+- `plugin.py` is the MaiBot SDK entry point; `_manifest.json` and
+  `pyproject.toml` are plugin/package metadata.
+- `moss/` contains runtime code.
+- `assets/comfyui/` holds the bundled ComfyUI API graph and other runtime JSON
+  assets. It is not a GitHub Actions directory; CI lives only under
+  `.github/workflows/`.
+- `vendor/` holds pinned upstream skill/compiler resources and provenance.
+- `tests/` is the offline test suite; `docs/` contains operator and developer
+  documentation. `README.md`, `LICENSE` and `NOTICE` stay at the repository root.
+
 Keep explicit generate, caption, layout, style, character, comic, meme, metadata
 and reverse routes. Show style/OC operations only in their submenus. Raw prompting
 is removed. Do not add status, debug, task recovery, image editing, animated

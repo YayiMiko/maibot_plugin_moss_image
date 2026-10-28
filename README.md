@@ -114,7 +114,7 @@ Anima 的查询证据与类别验证，向规划器提供身份资料和外观�
 候选先规范化大小写和空白再校验；候选无效或查询失败仍保留原名及作品上下文。
 Caption 正文不按逗号拆分，不应用 Anima Tag 清洗器。
 
-`workflows/moss-int8-api.json` 保留原生 MOSS INT8、`moss_image` 编码器、FLUX.2 VAE、
+`assets/comfyui/moss-int8-api.json` 保留原生 MOSS INT8、`moss_image` 编码器、FLUX.2 VAE、
 Flow shift 5、负分支 SLG 第 22 层，以及 Euler／sgm_uniform、50 步／CFG 3。
 只修改明确绑定的提示词、尺寸、模型和采样参数，不按 JSON 顺序猜正负面节点。
 无需旧版 MOSS 自定义 Loader；实际 ComfyUI 须有这些原生节点与模型。

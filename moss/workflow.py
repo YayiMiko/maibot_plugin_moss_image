@@ -19,7 +19,7 @@ def build_workflow(request, prompt: str, config, seed: int, task_id: str) -> dic
         Native ComfyUI API graph; local UI workflows remain untouched.
     """
     graph = json.loads(
-        (ROOT / "workflows/moss-int8-api.json").read_text(encoding="utf-8")
+        (ROOT / "assets/comfyui/moss-int8-api.json").read_text(encoding="utf-8")
     )
     graph["20"]["inputs"]["unet_name"] = config.unet_name
     graph["21"]["inputs"]["clip_name"] = config.clip_name
