@@ -2,7 +2,7 @@
 
 ## v0.3.1 — 2026-11-08
 
-- Raise the declared Host upper bound to `1.99.99` and the SDK upper bound to `2.99.99`, so the plugin loads on MaiBot 1.4.x without the compatibility-mode warning.
+- Raise the declared Host upper bound to `1.4.99` and the SDK upper bound to `2.99.99`, so the plugin loads on MaiBot 1.4.x without the compatibility-mode warning. The plugin market rejects `99` in the first or second version position, so the Host range stays at `1.4.99` rather than a broader placeholder.
 - Relax the declared `pillow` requirement to `>=11`. MaiBot 1.4.x ships Pillow 13, and the previous `>=11,<13` manifest range was reported as a shared-environment conflict that blocked the whole bot from starting.
 - Keep `pyproject.toml` and CI on the tested `pillow>=11,<13` range; only the manifest, which is the host loading gate, was widened.
 
