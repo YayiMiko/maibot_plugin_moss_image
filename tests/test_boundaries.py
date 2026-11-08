@@ -340,7 +340,7 @@ def test_config_update_does_not_restart_tasks_or_call_services(plugin):
 def test_manifest_ci_and_skill_integrity_agree():
     manifest = json.loads((ROOT / "_manifest.json").read_text(encoding="utf-8"))
     assert manifest["sdk"]["min_version"] == "2.8.2"
-    assert manifest["sdk"]["max_version"] == "2.99.99"
+    assert manifest["sdk"]["max_version"] == "2.21.99"
     package = __import__("tomllib").loads(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
