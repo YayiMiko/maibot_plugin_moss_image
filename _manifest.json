@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "id": "yayimiko.moss-image",
   "name": "MOSS 绘图",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "MaiBot 的 MOSS 生图插件：原文直出、漫画/表情包、风格与 OC、图片反推，通过 ComfyUI 发送到 QQ。",
   "author": {"name": "YayiMiko", "url": "https://github.com/YayiMiko"},
   "urls": {
